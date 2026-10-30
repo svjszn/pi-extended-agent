@@ -7,6 +7,8 @@ import { createFooter, createHeader } from "../ui/chrome.js";
 import { createEscapeExitEditor } from "../ui/escape-exit.js";
 import { createCommandPanel } from "../ui/command-panel.js";
 import { createUiTheme } from "../ui/theme.js";
+import { createChatStyle } from "../ui/chat.js";
+import type { nativeAppearanceTheme as NativeAppearanceTheme } from "../ui/appearance.js";
 import type { Runtime } from "./runtime.js";
 import type { Palette, HeaderTui, PanelTui } from "../ui/types.js";
 import type { Component, TUI, EditorTheme } from "@earendil-works/pi-tui";
@@ -48,6 +50,19 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     initTheme(name: string, watch: boolean): void; getEditorTheme(): EditorTheme;
   };
   initTheme("dark", false);
+  assert.equal(typeof api.ToolExecutionComponent, "function", "Missing native tool renderer");
+  const tool = new api.ToolExecutionComponent("read", "compat-tool", { path: "example.ts" }, { showImages: false }, undefined,
+    { requestRender() {} } as TUI, packageRoot);
+  tool.updateResult({ content: [{ type: "text", text: "Runtime tool details" }], isError: false });
+  const toolStyle = createChatStyle();
+  try {
+    toolStyle.apply({ children: [tool] }, 80);
+    assert.equal(tool.render(80).length, 1, "Runtime breaks compact tool calls");
+    assert.ok(stripTerminalSequences(tool.render(80)[0]).startsWith("  ▸ read"), "Runtime breaks tool call inset");
+    tool.handleMouse({ type: "click", button: "left", x: 3, y: 0, width: 80, height: 1,
+      screenX: 3, screenY: 0, shift: false, alt: false, ctrl: false });
+    assert.ok(tool.render(80).join("\n").includes("Runtime tool details"), "Runtime breaks tool disclosure");
+  } finally { toolStyle.dispose(); }
   const theme: Palette = { bold: (s) => s, fg: (_color, s) => s };
   const component = (lines: string[]) => ({ render: () => lines, invalidate() {} });
 
@@ -87,6 +102,10 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     const Editor = createEscapeExitEditor(api.CustomEditor, matchesKey, { isIdle: () => true, hasPendingMessages: () => false },
       { getLevel: () => "medium", step: (direction) => { effortSteps.push(direction); } }, () => { modeToggles++; });
     const input = new Editor(tui as TUI, getEditorTheme(), new KeybindingsManager());
+    input.setWorkingStatusIndicator({ renderInBorder: () => "Working", renderSpinnerInBorder: () => "*" } as unknown as Parameters<typeof input.setWorkingStatusIndicator>[0]);
+    assert.ok(stripTerminalSequences(input.render(width)[0]).startsWith("  Working"), "Runtime breaks Working inset");
+    assert.ok(!stripTerminalSequences(input.render(width)[1]).includes("Working"), "Runtime puts Working in the input border");
+    input.setWorkingStatusIndicator(undefined);
     input.onAction("app.thinking.cycle", () => { thinkingChanges++; });
     input.handleInput("\x1b[Z");
     assert.equal(modeToggles, 1, "Runtime breaks Shift+Tab mode switching");
@@ -98,7 +117,9 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     input.setText("");
     const inputLines = input.render(width).map(stripTerminalSequences);
     assert.equal(inputLines[0].trim(), "medium", "Runtime hides effort above input");
-    assert.equal(inputLines[1].trim(), "─".repeat(width - 4), "Runtime breaks input border");
+    assert.equal(inputLines[1], "─".repeat(width), "Runtime breaks full-width input border");
+    assert.ok(inputLines[2].startsWith("❯ "), "Runtime hides the input chevron or breaks text alignment");
+    input.dispose();
     let exited = false;
     input.onCtrlD = () => { exited = true; };
     input.handleInput("\x1b");
@@ -135,6 +156,15 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   const contextApi = await jiti.import(join(packageRoot, "dist", "lib", "context.js")) as {
     readContextReport: typeof ReadContextReport; readContextSummary: typeof ReadContextSummary;
   };
+  const appearanceApi = await jiti.import(join(packageRoot, "dist", "ui", "appearance.js")) as { nativeAppearanceTheme: typeof NativeAppearanceTheme };
+  const { getThemeByName } = await import(new URL("./modes/interactive/theme/theme.js", entry).href) as {
+    getThemeByName(name: string): InstanceType<PiApi["Theme"]> | undefined;
+  };
+  for (const mode of ["dark", "light"] as const) {
+    const themed = appearanceApi.nativeAppearanceTheme({ getTheme: getThemeByName }, { mode, color: "green" });
+    assert.ok(themed instanceof api.Theme, "Runtime breaks extension Theme instances");
+    assert.equal(themed.appearance, mode, "Runtime breaks theme appearance");
+  }
   const memory = api.SessionManager.inMemory(packageRoot);
   const context = {
     model: { contextWindow: 200_000 }, sessionManager: memory,
@@ -161,7 +191,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     const factory = await jiti.import(join(packageRoot, "dist", "extensions", file), { default: true }) as ExtensionFactory;
     await factory(fakePi as ExtensionAPI);
   }
-  for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt"]) {
+  for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
     assert.ok(commands.has(name), `Runtime failed to register /${name}`);
   }
 }

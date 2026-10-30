@@ -104,6 +104,9 @@ test("memory rejects traversal, secrets, oversized notes and an unbounded index"
   const memory = new MemoryStore(new StateFiles(join(directory(t), "state")));
   for (const id of ["../escape", "a/b", "..", "MEMORY", "a\\b"]) assert.throws(() => memory.save({ ...note, id }));
   assert.throws(() => memory.save({ ...note, content: "api_key=supersecretvalue123" }), /credentials/);
+  for (const content of ["npm_" + "x".repeat(36), "github_pat_" + "x".repeat(40)]) {
+    assert.throws(() => memory.save({ ...note, content }), /credentials/);
+  }
   assert.throws(() => memory.save({ ...note, content: "я".repeat(7000) }), /12000 bytes/);
   for (let i = 0; i < 32; i++) memory.save({ ...note, id: `topic-${i}` });
   assert.throws(() => memory.save({ ...note, id: "overflow" }), /limit reached/);

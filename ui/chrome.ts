@@ -5,6 +5,7 @@ import type { ContextSummary } from "../lib/context.js";
 import { contextTokens, contextPercent } from "./context-format.js";
 import { permissionFooter } from "../lib/permissions.js";
 import type { PermissionMode } from "../lib/permissions.js";
+import { createUiTheme } from "./theme.js";
 
 interface HeaderInfo {
   version: string;
@@ -14,8 +15,6 @@ interface HeaderInfo {
   getAuthNotice?(): string | undefined;
 }
 type HeaderMeasure = { truncateToWidth: typeof truncate };
-
-const white = (text: string) => `\x1b[97m${text}\x1b[39m`;
 
 export function pinTerminalTitle(terminal: Pick<Terminal, "setTitle">) {
   const original = terminal.setTitle;
@@ -27,7 +26,9 @@ export function pinTerminalTitle(terminal: Pick<Terminal, "setTitle">) {
 
 export function createHeader(tui: HeaderTui, theme: Palette, { truncateToWidth }: HeaderMeasure, info: HeaderInfo) {
   let hiddenResources: { document: TreeComponent & { children: TreeComponent[] }; component: TreeComponent; index: number } | undefined;
-  const chatStyle = createChatStyle();
+  const palette = createUiTheme();
+  const ink = (text: string) => palette.fg("primary", text);
+  const chatStyle = createChatStyle(() => tui.requestRender?.());
   const header = {
     invalidate() {},
     dispose() {
@@ -46,16 +47,16 @@ export function createHeader(tui: HeaderTui, theme: Palette, { truncateToWidth }
       const modelName = model?.id?.startsWith("gpt-")
         ? model.id.split("-").map((part, index) => index === 0 ? "GPT" : part.charAt(0).toUpperCase() + part.slice(1)).join("-")
         : model?.name ?? model?.id ?? "No model selected";
-      const title = white(theme.bold(`pi coding agent v${info.version}`));
-      const subtitle = theme.fg("muted", `${modelName} with ${info.getThinkingLevel()} effort`);
+      const title = ink(palette.bold(`pi coding agent v${info.version}`));
+      const subtitle = palette.fg("muted", `${modelName} with ${info.getThinkingLevel()} effort`);
       const cwd = String(info.getCwd?.() ?? process.cwd()).replace(/[\x00-\x1f\x7f-\x9f]/g, "");
-      const labels = [title, subtitle, theme.fg("dim", cwd)];
+      const labels = [title, subtitle, palette.fg("dim", cwd)];
       const content = width >= 32
-        ? logo.map((row, index) => `  ${white(row)}   ${labels[index] ?? ""}`)
-        : [...logo.map((row) => `  ${white(row)}`), ...labels.map((label) => `  ${label}`)];
+        ? logo.map((row, index) => `  ${palette.fg("logo", row)}   ${labels[index] ?? ""}`)
+        : [...logo.map((row) => `  ${palette.fg("logo", row)}`), ...labels.map((label) => `  ${label}`)];
       const lines = content.map((line) => truncateToWidth(line, width));
       const authNotice = info.getAuthNotice?.();
-      if (authNotice) lines.push(truncateToWidth(`  ${theme.fg("muted", authNotice)}`, width));
+      if (authNotice) lines.push(truncateToWidth(`  ${palette.fg("muted", authNotice)}`, width));
       // Command overlays reuse the header without mounting a chat document.
       if (!Array.isArray(tui.children)) return lines;
       // The public TUI tree contains the document and input dock. Measure the
@@ -94,13 +95,17 @@ export function createHeader(tui: HeaderTui, theme: Palette, { truncateToWidth }
 
 export function createFooter(_ctx: unknown, _tui: unknown, theme: Palette, _footerData: unknown, { truncateToWidth }: HeaderMeasure,
   getContext?: () => ContextSummary | undefined, getPermissions?: () => PermissionMode, getPlanning?: () => boolean) {
+  const palette = createUiTheme();
   return {
     invalidate() {},
     dispose() {},
     render(width: number) {
       if (width < 1) return [];
-      const modeLabel = getPlanning?.() ? "plan mode" : permissionFooter(getPermissions?.() ?? "full");
-      const left = `  ${theme.fg("dim", modeLabel)}`;
+      const planning = getPlanning?.() === true;
+      const permissions = getPermissions?.() ?? "full";
+      const modeLabel = planning ? "plan mode" : permissionFooter(permissions);
+      const modeColor = planning ? "effortMedium" : permissions === "full" ? "effortLow" : "dim";
+      const left = `  ${palette.fg(modeColor, modeLabel)}`;
       const usage = getContext?.();
       if (!usage) return [truncateToWidth(left, width)];
       const percent = usage.percent === null ? "—" : contextPercent(usage.percent);

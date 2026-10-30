@@ -4,15 +4,26 @@ import { planUpdate, updateEngine, updateHelp } from "./update.js";
 import { selectedRuntime } from "./runtime.js";
 import { errorMessage } from "../lib/errors.js";
 import { prepareRuntimeCommands } from "./command-policy.js";
+import { updateAgent } from "./self-update.js";
+import { AGENT_VERSION } from "../lib/package.js";
 
 let args = process.argv.slice(2);
 // Upstream release notices point to its global self-updater. This distribution
 // owns its Pi dependency and handles updates through its own entry point.
 process.env.PI_SKIP_VERSION_CHECK = "1";
+process.env.PI_EXTENDED_AGENT_VERSION = AGENT_VERSION;
+if (args.length === 1 && args[0] === "--version") {
+  console.log(`Pi Extended Agent ${AGENT_VERSION}\nPi Coding Agent ${selectedRuntime().version}`);
+  process.exit(0);
+}
 try {
   const update = planUpdate(args);
   if (update.type === "help") {
     console.log(updateHelp);
+    process.exit(0);
+  }
+  if (update.type === "package") {
+    await updateAgent(fileURLToPath(new URL("../../", import.meta.url)), update);
     process.exit(0);
   }
   if (update.type === "engine") {

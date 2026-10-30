@@ -27,9 +27,9 @@
 
 | Component | Version / default |
 | :--- | :--- |
-| Package | `pi-extended-agent` · `1.0.0` |
+| Package | `pi-extended-agent` · `1.1.0` |
 | Bundled Pi fallback | `1.4.0` |
-| Managed engine | Updated separately with `pi update` |
+| Managed engine | Updated separately with `pi update --engine` |
 | Startup model | Selected by the active Pi engine from its settings and catalog |
 | Node.js | `>=22.19.0` |
 
@@ -67,6 +67,7 @@ pi
 ```
 
 The package also provides `pi-extended-agent` as an alternative command. Both launch the same agent.
+`pi --version` shows both the agent and active engine versions.
 
 ### From source
 
@@ -127,48 +128,13 @@ Each computer needs its own sign-in. The standard profile is `~/.pi/agent/`, nor
 
 ## Updates
 
-### Update the internal Pi engine
+Update from your terminal, then restart Pi:
 
 ```sh
 pi update
 ```
 
-The launcher checks the latest upstream release through npm, installs it into a separate managed version directory, and checks our extension loading, terminal layout, and Escape handling. The version check uses your npm registry, proxy, and certificate settings, with a 30-second request timeout and one retry. These compatibility checks do not call a model. Only after they pass does it switch the active engine. A failed download, installation, or compatibility check leaves the previous engine selected.
-
-**Engine updates do not install a global upstream Pi package, change the global command, edit this repository, or touch your credentials.** Restart Pi after a successful update.
-
-| Command | Behavior |
-| :--- | :--- |
-| `pi update` | Install the latest Pi release and activate it if compatibility checks pass |
-| `pi update --check` | Show the active and latest engine versions |
-| `pi update --to 1.4.0` | Install a specific engine version |
-| `pi update --offline` | Check and activate the newest complete cached engine |
-| `pi update --rollback` | Restore the previous engine, or the bundled fallback |
-| `pi update --all` | Update the engine, then configured extension packages |
-| `pi update --models` | Refresh model catalogs through Pi |
-| `pi update --extensions` | Update configured extension packages through Pi |
-
-The managed engine lives under `~/.pi/pi-extended-agent/`, separately from the authentication profile. Version directories remain available for rollback. `active.json` selects the active release. The bundled dependency is used until an updated engine is activated.
-
-At interactive startup, this package checks npm in the background and shows `Pi VERSION is available … Run pi update` when a newer engine exists. Successful checks are cached for 12 hours under the managed runtime directory. The check uses your npm registry settings, has a short timeout, and never blocks the editor. Offline mode (`PI_OFFLINE`) skips it; network failures stay quiet. Print and RPC sessions do not check. Updates are installed only when you run `pi update`.
-
-For testing or custom storage, set `PI_EXTENDED_RUNTIME_DIR`. The launcher disables upstream self-update notices because updates belong to this package's updater; the notification above points to our managed update command. It does not automatically switch engines at startup.
-
-### Update Pi Extended Agent itself
-
-```sh
-npm install -g --ignore-scripts pi-extended-agent@latest
-```
-
-For a linked source checkout:
-
-```sh
-git pull
-npm ci --ignore-scripts
-npm run build
-```
-
-Restart Pi afterward. Source edits do not require relinking. If you move the checkout or change the CLI entry points, run `npm link --force --ignore-scripts` again.
+Run `pi update --help` for additional options.
 
 ## Daily use
 
@@ -182,6 +148,8 @@ Restart Pi afterward. Source edits do not require relinking. If you move the che
 | `/config` | Configuration overview with an integrated Preferences tab |
 | `/context` | Context window map, estimated breakdown, loaded instructions, skills, and active tools |
 | `/effort [level]` | Choose reasoning effort or set a supported level directly |
+| `/theme [dark\|light]` | Choose a dark or light interface |
+| `/color [default\|yellow\|green\|blue\|purple]` | Choose the accent for input borders, the Pi logo, activity charts, and subtle message backgrounds |
 | `/permissions [mode]` | Choose full access, per-action approval, or read-only agent tools |
 | `/memory` | Inspect, edit, delete, and toggle automatic project memory |
 | `/plan [goal]` | Research a task, edit its plan, and explicitly approve execution |
@@ -203,7 +171,7 @@ The command menu omits `/settings`, `/tree`, `/thinking`, `/scoped-models`, `/im
 
 `/status` shows the active Pi engine version, session ID, provider login method, model, MCP servers, and active tool names. The model appears with MCP and tools, and shows only its model ID. Login reflects configured credentials without resolving or refreshing them. MCP metadata combines the engine's configuration reader with extension registrations and tool namespaces; project settings respect Pi's trust decision. Registered tools do not prove a live connection. Engines without a native MCP configuration reader show the servers inferred from registered tools and extensions.
 
-`/effort` opens a selector containing only levels supported by the current model, as reported by Pi's `getSupportedThinkingLevels(model)`. Choose with **↑/↓** or **Tab / Shift+Tab**, apply with **Enter**, or cancel with **Escape**. `/effort high` sets a level directly; argument completion follows the selected model. Changes apply to the current session through Pi's native thinking-level API. The current level comes from `pi.getThinkingLevel()` and appears right-aligned on a separate line above the input. It stays synchronized with native shortcuts and model changes. The label is hidden when the terminal is too narrow to fit its name.
+`/effort` opens a horizontal slider with the levels supported by the current model. Use **←/→** or drag the slider, apply with **Enter**, or cancel with **Escape**. High and xhigh glow purple; max uses an animated rainbow when the model supports it. `/effort high` sets a level directly. The current effort appears in the header.
 
 `/model` uses the same header, two-column inset, borderless body, monochrome palette, and input dock as the other command screens. Search stays in the input row; the current model uses `●` and the highlighted row is bold. Native model discovery, scoped-model switching with Tab, selection with Enter, and saving the default with Ctrl+S retain Pi's behavior. Escape cancels the selector and its background catalog refresh. Model-screen compatibility is checked before activating an engine update.
 
@@ -355,6 +323,12 @@ of commits. Read [AGENTS.md](AGENTS.md) for repository conventions and the
 [contributing guide](https://svjszn.github.io/pi-extended-agent/contributing/)
 for the full workflow.
 
+Use focused English Conventional Commits such as
+`fix(updates): preserve linked checkouts` and `test(security): reject runtime path escapes`.
+Check `git status --short --branch` before starting and after committing. Use
+patch versions for fixes and keep pending changes in the changelog until the
+tested release is ready.
+
 ## Troubleshooting
 
 **The original Pi interface opens or `/effort` is missing.** A different installation owns `pi`. Check PATH as shown above. Remove the old npm-installed Pi, then reinstall or relink this package. The unique `pi-extended-agent` command can also launch our package directly.
@@ -365,6 +339,8 @@ for the full workflow.
 
 **Authentication is missing.** Check `PI_CODING_AGENT_DIR` and use `/login` on this computer. Early local experiments used `.local/pi/`; the current package does not select that directory automatically.
 
----
+## License
+
+[MIT](LICENSE).
 
 Built on [Pi](https://pi.dev) by Earendil and contributors. Uses the official pixel mark in a terminal-friendly form.

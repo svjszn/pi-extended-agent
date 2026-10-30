@@ -60,7 +60,7 @@ export class MemoryStore {
 }
 
 export function containsSecret(text: string) {
-  return /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|\b(?:sk-[a-zA-Z0-9_-]{16,}|gh[pousr]_[a-zA-Z0-9]{20,})|\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*[:=]\s*["']?[^\s"']{8,}/i.test(text);
+  return /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|\b(?:sk-[a-zA-Z0-9_-]{16,}|gh[pousr]_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{20,}|npm_[a-zA-Z0-9]{20,})|\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*[:=]\s*["']?[^\s"']{8,}/i.test(text);
 }
 
 export function memoryPrompt(store: MemoryStore) {

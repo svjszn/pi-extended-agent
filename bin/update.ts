@@ -19,6 +19,7 @@ export interface UpdateOptions {
   extensionArgs?: string[];
 }
 export type UpdatePlan = { type: "upstream"; args: string[] } | { type: "help" }
+  | { type: "package"; checkOnly: boolean }
   | ({ type: "engine" } & UpdateOptions);
 interface UpdateServices {
   directory?: string;
@@ -34,13 +35,16 @@ export function planUpdate(args: string[]): UpdatePlan {
   if (args[0] !== "update") return { type: "upstream", args };
   const rest = args.slice(1);
   if (rest.includes("--help") || rest.includes("-h")) return { type: "help" };
+  const packageOptions = new Set(["self", "--self", "--check"]);
+  if (rest.every((arg) => packageOptions.has(arg))) return { type: "package", checkOnly: rest.includes("--check") };
+  if (rest.includes("self") || rest.includes("--self")) throw new Error("Use pi update [--check] for the agent, or pi update --engine for the Pi engine.");
   const selectors = rest.filter((_arg, i) => !["--extension", "--to"].includes(rest[i - 1]));
-  const self = selectors.some((arg) => ["self", "pi", "--self", "--all", "--to", "--rollback", "--check"].includes(arg));
+  const self = selectors.some((arg) => ["pi", "--engine", "--all", "--to", "--rollback", "--check"].includes(arg));
   const resource = selectors.some((arg) => ["--models", "--extensions", "--extension"].includes(arg)
-    || (!arg.startsWith("-") && arg !== "self" && arg !== "pi"));
+    || (!arg.startsWith("-") && arg !== "pi"));
   if (resource && !self) return { type: "upstream", args };
   let version;
-  const allowed = new Set(["self", "pi", "--self", "--all", "--extensions", "--offline", "--rollback", "--check", "--approve", "-a", "--no-approve", "-na"]);
+  const allowed = new Set(["pi", "--engine", "--all", "--extensions", "--offline", "--rollback", "--check", "--approve", "-a", "--no-approve", "-na"]);
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--to") {
       if (version || !validVersion(rest[i + 1])) throw new Error("--to requires one exact Pi version, e.g. 1.4.0.");
@@ -55,10 +59,13 @@ export function planUpdate(args: string[]): UpdatePlan {
     extensionArgs: all && !checkOnly ? ["update", "--extensions", ...trust] : undefined };
 }
 
-export const updateHelp = `Update the Pi engine managed by pi-extended-agent.
+export const updateHelp = `Update Pi Extended Agent or its managed Pi engine.
 
-  pi update                 Install the latest Pi, check compatibility, and activate it
-  pi update --check         Show the active and latest engine versions
+  pi update                 Update pi-extended-agent through npm
+  pi update --check         Show the installed and latest agent versions
+  pi update --engine        Install the latest compatible Pi engine
+  pi update --engine --check
+                            Show the active and latest engine versions
   pi update --to VERSION    Install an exact engine version
   pi update --offline       Use the newest complete engine cached on this computer
   pi update --rollback      Restore the previous engine (or the bundled version)
@@ -70,9 +77,9 @@ export const updateHelp = `Update the Pi engine managed by pi-extended-agent.
 
 The global pi command stays owned by pi-extended-agent. Git is not required.
 The new engine is activated only after compatibility checks pass.
-Update pi-extended-agent itself through npm.`;
+Linked source checkouts are never replaced by a global package update.`;
 
-function npmCliPath() {
+export function npmCliPath() {
   const candidates = [process.env.npm_execpath, join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js")];
   for (const directory of (process.env.PATH || "").split(delimiter)) {
     candidates.push(join(directory, "node_modules/npm/bin/npm-cli.js"));
@@ -101,7 +108,7 @@ export async function installEngine(version: string, directory: string, { offlin
   });
 }
 
-const captureCommand: CommandRunner = async (executable, args, options) => {
+export const captureCommand: CommandRunner = async (executable, args, options) => {
   // Files also work in Windows environments that restrict child-process pipes.
   const directory = mkdtempSync(join(tmpdir(), "pi-version-"));
   const output = join(directory, "stdout"), errors = join(directory, "stderr");
@@ -130,12 +137,12 @@ const captureCommand: CommandRunner = async (executable, args, options) => {
   }
 }
 
-export async function latestVersion(run: CommandRunner = captureCommand, options: { signal?: AbortSignal; background?: boolean } = {}) {
+export async function latestPackageVersion(packageName: string, run: CommandRunner = captureCommand, options: { signal?: AbortSignal; background?: boolean } = {}) {
   let stdout;
   try {
     // Use the same registry, proxy, and certificate settings as installation.
     // A slow or unreachable pi.dev website must not block npm engine updates.
-    ({ stdout } = await run(process.execPath, [npmCliPath(), "view", `${PI_PACKAGE}@latest`, "version", "--json", "--prefer-online",
+    ({ stdout } = await run(process.execPath, [npmCliPath(), "view", `${packageName}@latest`, "version", "--json", "--prefer-online",
       `--fetch-retries=${options.background ? 0 : 1}`, "--fetch-retry-mintimeout=1000", "--fetch-retry-maxtimeout=2000",
       `--fetch-timeout=${options.background ? 5000 : 30000}`], {
       timeout: options.background ? 6000 : 75_000, windowsHide: true, signal: options.signal,
@@ -143,13 +150,15 @@ export async function latestVersion(run: CommandRunner = captureCommand, options
   } catch (error) {
     const failure = error as CommandError;
     const reason = failure.killed ? "npm timed out" : failure.stderr?.trim() || errorMessage(error);
-    throw new Error(`Could not check the latest Pi release through npm: ${reason}. Retry pi update, or use pi update --to VERSION to skip the version lookup.`);
+    throw new Error(`Could not check the latest ${packageName} release through npm: ${reason}.${packageName === PI_PACKAGE ? " Retry pi update --engine, or use pi update --to VERSION to skip the version lookup." : " Retry pi update later."}`);
   }
   let version;
   try { version = JSON.parse(stdout); } catch { /* Report invalid metadata below. */ }
-  if (!validVersion(version)) throw new Error("npm returned an invalid Pi version. No update was activated.");
+  if (!validVersion(version)) throw new Error(`npm returned an invalid ${packageName === PI_PACKAGE ? "Pi" : "agent"} version. No update was activated.`);
   return version;
 }
+
+export const latestVersion = (run?: CommandRunner, options?: { signal?: AbortSignal; background?: boolean }) => latestPackageVersion(PI_PACKAGE, run, options);
 
 export async function updateEngine(packageRoot: string, options: UpdateOptions = {}, services: UpdateServices = {}) {
   const directory = services.directory || runtimeDirectory();

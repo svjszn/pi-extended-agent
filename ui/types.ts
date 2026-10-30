@@ -21,5 +21,6 @@ export interface HeaderTui {
   mode: string;
   children?: TreeComponent[];
   terminal?: Pick<Terminal, "rows" | "columns">;
+  requestRender?(): void;
 }
 export type PanelTui = Pick<TUI, "requestRender"> & { terminal: Pick<Terminal, "rows"> };

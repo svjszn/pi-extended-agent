@@ -86,3 +86,23 @@ documentation when behavior or commands change.
 
 Keep generated files, local profiles, credentials, and build caches out of the
 pull request. Release publication is handled separately from contributions.
+
+## Commits and releases
+
+Use one logical change per commit and write English Conventional Commit subjects:
+
+```text
+fix(updates): preserve linked source checkouts
+test(security): reject runtime path escapes
+docs(updates): explain the upgrade from 1.0.0
+```
+
+Inspect `git status --short --branch` before starting and after committing.
+Keep the working tree clean after completed work; do not reset or discard
+someone else's changes. Record fixes in the unreleased changelog. Patch releases
+contain fixes, minor releases add compatible features, and major releases cover
+breaking changes. Release tags point to the tested commit used for publication.
+
+GitHub Actions checks package installation on Windows and Linux with Node.js
+22.19 and 24. For a local dependency check, run `npm audit` and
+`npm audit --prefix docs`.

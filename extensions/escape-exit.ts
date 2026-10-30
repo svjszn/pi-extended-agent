@@ -6,6 +6,7 @@ import { PLAN_TOGGLE } from "../lib/plan.js";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 
 export default function escapeExit(pi: ExtensionAPI) {
+  let editor: { dispose(): void } | undefined;
   pi.on("session_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
     const EscapeExitEditor = createEscapeExitEditor(CustomEditor, matchesKey, ctx, {
@@ -19,8 +20,12 @@ export default function escapeExit(pi: ExtensionAPI) {
         if (next && next !== current) pi.setThinkingLevel(next);
       },
     }, () => pi.events.emit(PLAN_TOGGLE, undefined));
-    ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-      new EscapeExitEditor(tui, theme, keybindings, { embedWorkingStatus: true }),
-    );
+    ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+      editor?.dispose();
+      const next = new EscapeExitEditor(tui, theme, keybindings, { embedWorkingStatus: true });
+      editor = next;
+      return next;
+    });
   });
+  pi.on("session_shutdown", () => { editor?.dispose(); editor = undefined; });
 }

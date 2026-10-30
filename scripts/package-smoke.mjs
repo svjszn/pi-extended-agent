@@ -29,7 +29,7 @@ const { session } = await createAgentSession({ cwd, agentDir, modelRuntime, sett
 let resumed;
 try {
   await session.bindExtensions({ mode: "print" });
-  const required = ["config", "model", "effort", "permissions", "memory", "plan", "prompt"];
+  const required = ["config", "model", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"];
   const commands = session._extensionRunner.getRegisteredCommands().map((command) => command.name);
   for (const name of required.filter((name) => name !== "model")) assert.ok(commands.includes(name), `Missing /${name}`);
   session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "release-smoke", name: "codemode", arguments: {} }],
@@ -41,6 +41,9 @@ try {
   assert.equal((await call("project_memory", note)).isError, false);
   assert.match(JSON.stringify(await call("project_memory", { action: "read", id: note.id })), /fixture note/);
   await session.prompt("/prompt session Keep answers short.");
+  await session.prompt("/theme light");
+  await session.prompt("/color green");
+  assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "pi-extended", "appearance.json"), "utf8")), { mode: "light", color: "green" });
   writeFileSync(join(cwd, "sample.txt"), "original");
   await session.prompt("/plan start");
   assert.equal((await call("write", { path: "sample.txt", content: "blocked" })).isError, true);

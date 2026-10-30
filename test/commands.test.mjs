@@ -151,7 +151,10 @@ test("command panels fit resized terminals, scroll with native keys, and close o
       assert.equal(lines.length, rows);
       assert.ok(lines.every((line) => measure.visibleWidth(line) <= width));
       assert.doesNotMatch(lines.join("\n"), /[╭╮╰╯│]/);
-      if (width >= 24 && rows >= 8) assert.match(measure.stripTerminalSequences(lines.at(-3)), /^  esc to close/);
+      if (width >= 24 && rows >= 8) {
+        assert.match(measure.stripTerminalSequences(lines.at(-3)), /^❯ esc to close/);
+        assert.equal(measure.stripTerminalSequences(lines.at(-4)), "─".repeat(width));
+      }
     }
     panel.handleInput("\x1b[F"); // End
     if (renderBody === configLines) assert.match(panel.render(80).join("\n"), /Row 29/);
@@ -246,7 +249,7 @@ test("activity period keys update the screen and the close hint stays in the inp
   assert.equal(lines[1].trim(), "Pi logo");
   assert.equal(lines[4].trim(), "Activity");
   assert.equal(lines[6].indexOf("Body content"), 2);
-  assert.equal(lines[21].trim(), "esc to close");
+  assert.equal(lines[21].trim(), "❯ esc to close");
   panel.handleInput("\t"); panel.render(80);
   panel.handleInput("\x1b[D"); panel.render(80);
   panel.handleInput("\x1b[Z"); panel.render(80);

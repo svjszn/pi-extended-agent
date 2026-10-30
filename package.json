@@ -1,7 +1,8 @@
 {
   "name": "pi-extended-agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Pi Coding Agent with a custom interface and managed engine updates",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/svjszn/pi-extended-agent.git"
@@ -22,7 +23,7 @@
     "start": "node bin/pi.mjs",
     "pi": "node bin/pi.mjs",
     "check": "npm run typecheck",
-    "test": "node --test --test-isolation=none test/pi-interface.test.mjs test/startup.test.mjs test/escape-exit.test.mjs test/update.test.mjs test/commands.test.mjs test/skills.test.mjs test/context.test.mjs test/effort.test.mjs test/command-policy.test.mjs test/permissions.test.mjs test/model-screen.test.mjs test/workspace.test.mjs",
+    "test": "node scripts/run-tests.mjs test/pi-interface.test.mjs test/startup.test.mjs test/escape-exit.test.mjs test/update.test.mjs test/commands.test.mjs test/skills.test.mjs test/context.test.mjs test/effort.test.mjs test/command-policy.test.mjs test/permissions.test.mjs test/model-screen.test.mjs test/workspace.test.mjs test/appearance.test.mjs",
     "smoke": "node bin/pi.mjs --no-session --no-tools --no-extensions --no-skills --no-prompt-templates --no-context-files --print \"Reply with exactly: PI_OK\"",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -38,7 +39,8 @@
     "dist/",
     "ui/*.svg",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [

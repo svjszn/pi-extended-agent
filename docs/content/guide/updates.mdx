@@ -1,69 +1,15 @@
 ---
 title: Updates
-description: Update the Pi engine or the Pi Extended Agent package.
+description: Update Pi Extended Agent from your terminal.
 ---
 
 # Updates
 
-Pi Extended Agent has two update paths: `pi update` updates the internal Pi
-engine, and npm updates this package.
-
-## Update Pi
-
-Run the following in your terminal:
+Run this in your terminal, then restart Pi:
 
 ```sh
 pi update
 ```
 
-The updater installs the new engine and checks it with the agent's interface
-and extensions. It activates the engine after the checks pass. Restart Pi
-to use it.
-
-If installation or a compatibility check fails, the previous engine stays
-active.
-
-## Check or Roll Back
-
-```sh
-pi update --check
-pi update --rollback
-```
-
-You can also choose an exact version or use a cached engine offline:
-
-```sh
-pi update --to 1.4.0
-pi update --offline
-```
-
-## Update Pi Extended Agent
-
-```sh
-npm install -g --ignore-scripts pi-extended-agent@latest
-```
-
-For a linked source checkout, pull changes and rebuild:
-
-```sh
-git pull
-npm ci --ignore-scripts
-npm run build
-```
-
-Restart Pi after either update.
-
-## Other Update Commands
-
-| Command | Purpose |
-| --- | --- |
-| `pi update --all` | Update Pi, then configured extension packages |
-| `pi update --models` | Refresh Pi's model catalogs |
-| `pi update --extensions` | Update extension packages |
-
-Pi can show an update notice at startup. The check runs in the background;
-set `PI_OFFLINE` to skip it. Engines are kept separately from your profile,
-so engine updates preserve your credentials and sessions.
-
-See [Configuration and storage](/reference/configuration) for the managed
-engine location.
+Use `pi update --check` to check for a release without installing it, or
+`pi update --help` for additional options.

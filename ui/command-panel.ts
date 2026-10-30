@@ -1,6 +1,7 @@
 import type { KeyId, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { Measure, Palette, PanelTui } from "./types.js";
 import { errorMessage } from "../lib/errors.js";
+import { faintInputRule } from "./theme.js";
 
 export type Period = "all" | "week" | "month";
 export interface PanelControls {
@@ -96,10 +97,11 @@ export function createCommandPanel<T>({ title, tui, theme, measure, done, load, 
       offset = Math.min(offset, maxOffset);
       const content = lines.slice(offset, offset + pageSize).map((line) => pad + line);
       while (content.length < pageSize) content.push("");
-      const rule = pad + theme.fg("border", "─".repeat(inner));
+      const rule = faintInputRule(theme.fg("inputBorder", "─".repeat(width)));
       const marker = this.focused ? measure.CURSOR_MARKER || "" : "";
       const scrollHint = maxOffset > 0 && inner >= 30 ? "↑↓ scroll" : "";
-      const prompt = pad + (renderInput ? renderInput(inner, this.focused)
+      const prefix = indent >= 2 ? " ".repeat(indent - 2) + "❯ " : pad;
+      const prompt = theme.fg("primary", prefix) + (renderInput ? renderInput(inner, this.focused)
         : marker + theme.fg("muted", "esc to close") + (scrollHint ? " ".repeat(Math.max(1, inner - 12 - scrollHint.length)) + theme.fg("dim", scrollHint) : ""));
       const footer = renderFooter?.(width)?.at(-1) || "";
       const input = inputHeight === 4 ? [rule, prompt, rule, footer] : [prompt, footer].slice(0, inputHeight);

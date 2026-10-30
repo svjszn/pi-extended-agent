@@ -1,5 +1,8 @@
 import { createUiTheme } from "./theme.js";
 import type { TreeComponent } from "./types.js";
+import { isActivity, styleToolCall } from "../bin/tool-interface.js";
+import { getAppearance } from "../lib/appearance.js";
+import type { Appearance } from "../lib/appearance.js";
 
 interface UserContent extends TreeComponent {
   defaultTextStyle?: { color?: (text: string) => string; bgColor?: (text: string) => string };
@@ -20,12 +23,14 @@ function isNativeMessage(component: TreeComponent): component is NativeMessage {
 // Keep Pi's Markdown, streaming, thinking controls, and terminal message zones.
 // Only style its native message components; runtime checks cover both the Box
 // used in 0.85 and the directly padded Markdown used in 1.4.
-export function createChatStyle() {
+export function createChatStyle(repaint: () => void = () => {}) {
   const palette = createUiTheme();
   const messages = new Map<NativeMessage, number>();
-  const styled = new WeakSet<UserContent>();
+  const styled = new WeakMap<UserContent, Readonly<Appearance>>();
+  const activities = new Map<TreeComponent, () => void>();
   function styleUserContent(component: UserContent) {
-    if (styled.has(component)) return;
+    const appearance = getAppearance();
+    if (styled.get(component) === appearance) return;
     if (typeof component.setBgFn === "function") {
       component.setBgFn((text) => palette.bg("userMessage", text));
     }
@@ -39,17 +44,24 @@ export function createChatStyle() {
       component.invalidate();
     }
     for (const child of component.children || []) styleUserContent(child);
-    styled.add(component);
+    styled.set(component, appearance);
   }
   return {
     apply(container: { children: TreeComponent[] }, width: number) {
       const padding = Math.min(2, Math.max(0, Math.floor((width - 1) / 2)));
       // Removed messages must not keep entire previous sessions in memory.
       const current = new Set(container.children);
+      for (const [component, restore] of activities) {
+        if (!current.has(component)) { restore(); activities.delete(component); }
+      }
       for (const message of messages.keys()) {
         if (!current.has(message)) messages.delete(message);
       }
       for (const message of container.children) {
+        if (isActivity(message)) {
+          if (!activities.has(message)) activities.set(message, styleToolCall(message, repaint));
+          continue;
+        }
         const name = message.constructor?.name;
         if (!isNativeMessage(message)) continue;
         if (!messages.has(message)) messages.set(message, message.outputPad);
@@ -62,6 +74,8 @@ export function createChatStyle() {
     dispose() {
       for (const [message, padding] of messages) message.setOutputPad(padding);
       messages.clear();
+      for (const restore of activities.values()) restore();
+      activities.clear();
     },
   };
 }

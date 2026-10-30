@@ -10,9 +10,11 @@ import { PERMISSIONS_CHANGED, isPermissionMode, readPermissionMode } from "../li
 import type { PermissionMode } from "../lib/permissions.js";
 import { PLAN_CHANGED, PLAN_ENTRY, isPlanning } from "../lib/plan.js";
 import type { Plan } from "../lib/plan.js";
+import { mountAppearanceTerminal } from "../ui/appearance.js";
 
 export default function piInterface(pi: ExtensionAPI) {
   let activeTui: TUI | undefined, restoreTitle: (() => void) | undefined;
+  let appearanceTerminal: ReturnType<typeof mountAppearanceTerminal> | undefined;
   let context: ContextSummary | undefined;
   let permissionMode: PermissionMode = "full", stopPermissions: (() => void) | undefined;
   let planning = false, stopPlan: (() => void) | undefined;
@@ -46,6 +48,8 @@ export default function piInterface(pi: ExtensionAPI) {
     ctx.ui.setHeader((tui, theme) => {
       if (activeTui !== tui) {
         restoreTitle?.();
+        appearanceTerminal?.dispose();
+        appearanceTerminal = mountAppearanceTerminal(tui);
         restoreTitle = pinTerminalTitle(tui.terminal);
       }
       activeTui = tui;
@@ -71,6 +75,7 @@ export default function piInterface(pi: ExtensionAPI) {
   pi.on("session_tree", refreshContext);
   pi.on("thinking_level_select", () => activeTui?.requestRender());
   pi.on("session_shutdown", () => {
+    appearanceTerminal?.dispose(); appearanceTerminal = undefined;
     restoreTitle?.(); restoreTitle = undefined; activeTui = undefined; context = undefined;
     stopPermissions?.(); stopPermissions = undefined; permissionMode = "full";
     stopPlan?.(); stopPlan = undefined; planning = false;

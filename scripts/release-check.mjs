@@ -25,10 +25,11 @@ const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
 assert.equal(manifest.private, undefined, "The release package is still private.");
 assert.equal(manifest.version, lock.version); assert.equal(manifest.version, lock.packages[""].version);
+assert.equal(manifest.license, lock.packages[""].license, "Package license metadata differs from the lockfile.");
 const releases = join(root, ".local", "releases"); mkdirSync(releases, { recursive: true });
 const [packed] = JSON.parse(npmRun(["pack", "--ignore-scripts", "--json", "--pack-destination", releases], { capture: true }).stdout);
 const files = packed.files.map((file) => file.path);
-for (const name of ["bin/pi.mjs", "dist/bin/main.js", "dist/extensions/workspace.js", "dist/ui/workspace-screen.js", "README.md", "CHANGELOG.md"]) {
+for (const name of ["bin/pi.mjs", "dist/bin/main.js", "dist/extensions/workspace.js", "dist/ui/workspace-screen.js", "README.md", "CHANGELOG.md", "LICENSE"]) {
   assert.ok(files.includes(name), `Missing package file: ${name}`);
 }
 assert.ok(files.every((name) => !/(^|\/)(?:\.env(?:\..*)?|auth\.json|\.local|node_modules|test)(\/|$)/.test(name)), "Package includes local/private files.");
@@ -53,7 +54,9 @@ try {
     ? run(join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"),
       ["-NoProfile", "-NonInteractive", "-Command", `& ${[shim, ...args].map(quotePowerShell).join(" ")}\nexit $LASTEXITCODE`], { cwd: project, env, capture: true })
     : run(shim, args, { cwd: project, env, capture: true });
-  assert.match(launch(["--version"]).stdout, /1\.4\.0/);
+  const versionOutput = launch(["--version"]).stdout;
+  assert.ok(versionOutput.includes(`Pi Extended Agent ${manifest.version}`));
+  assert.match(versionOutput, /Pi Coding Agent 1\.4\.0/);
   assert.match(launch(["--help"]).stdout, /Usage|Options|coding agent/i);
   const auth = run(process.execPath, [join(installed, "bin", "pi.mjs"), "auth", "check", "--provider", "openai-codex", "--no-refresh", "--json"],
     { cwd: project, env, capture: true, accepted: [0, 1, 2] });

@@ -17,6 +17,13 @@ npm ci --prefix docs
 npm run build --prefix docs
 ```
 
+Check `git status --short --branch` before preparation and record changes under
+the next unreleased changelog entry. Run `npm audit` and `npm audit --prefix docs`;
+investigate findings rather than applying breaking upgrades with `--force`.
+Commit each logical change with an English Conventional Commit subject. Before
+publishing, remove the unreleased label for that version, rerun verification on
+the final files, commit, and confirm that Git is clean.
+
 Also build the docs with `DOCS_BASE_PATH=/pi-extended-agent` to exercise the
 production subpath. In PowerShell:
 
@@ -62,11 +69,11 @@ Authenticate with `npm login` and confirm the account with `npm whoami`. Before
 the first publication, verify the package name is available or owned by the
 intended account. Confirm the target version has not already been published.
 
-For version 1.0.0:
+For version 1.1.0:
 
 ```sh
 npm view pi-extended-agent versions --json
-npm publish .local/releases/pi-extended-agent-1.0.0.tgz --access public
+npm publish .local/releases/pi-extended-agent-1.1.0.tgz --access public
 ```
 
 For a never-published name, `npm view` may return `E404`. Follow npm's browser
@@ -76,8 +83,8 @@ tracked files. Never publish from `docs/`, which is marked private.
 Verify registry metadata and an isolated global install after publication:
 
 ```sh
-npm view pi-extended-agent@1.0.0 version dist.integrity
-npm install -g --prefix .local/published-smoke --ignore-scripts pi-extended-agent@1.0.0
+npm view pi-extended-agent@1.1.0 version dist.integrity
+npm install -g --prefix .local/published-smoke --ignore-scripts pi-extended-agent@1.1.0
 ```
 
 Run the installed `pi --version` and `pi --help` from that prefix with an empty
@@ -88,7 +95,7 @@ as a release smoke test.
 ## 4. Tag and announce
 
 After publication and deployment have been verified, replace any remaining
-prepublication wording, commit those changes, tag the release commit as `v1.0.0`,
+prepublication wording, commit those changes, tag the release commit as `v1.1.0`,
 and push the tag. Create the GitHub release from the changelog, linking both
 the documentation and npm package. Do not claim publication or deployment until
 their remote results have been checked.

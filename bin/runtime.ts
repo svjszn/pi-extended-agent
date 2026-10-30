@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -21,8 +22,19 @@ export function runtimeDirectory() {
 export function describeRuntime(packageDir: string): Runtime {
   const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   if (manifest.name !== PI_PACKAGE || !validVersion(manifest.version)) throw new Error("Invalid Pi runtime package.");
-  const entry = resolve(packageDir, manifest.main);
-  const cli = resolve(packageDir, manifest.bin.pi);
+  const ownedFile = (name: unknown) => {
+    if (typeof name !== "string" || !name) throw new Error("Invalid Pi runtime entry point.");
+    const root = realpathSync(packageDir);
+    const file = resolve(root, name);
+    const within = (target: string) => {
+      const rel = relative(root, target);
+      return rel && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+    };
+    if (!within(file) || (existsSync(file) && !within(realpathSync(file)))) throw new Error("Pi runtime entry point is outside its package.");
+    return file;
+  };
+  const entry = ownedFile(manifest.main);
+  const cli = ownedFile(manifest.bin?.pi);
   if (!existsSync(entry) || !existsSync(cli)) throw new Error(`Pi ${manifest.version} is incomplete.`);
   return { version: manifest.version, packageDir, entry, cli };
 }

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { planUpdate, updateEngine, latestVersion } from "../dist/bin/update.js";
-import { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime } from "../dist/bin/runtime.js";
-import { checkForEngineUpdate, UPDATE_CHECK_INTERVAL } from "../dist/lib/update-notice.js";
+import { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime, describeRuntime } from "../dist/bin/runtime.js";
+import { checkForEngineUpdate, checkForAgentUpdate, checkForUpdates, checkForReleaseUpdates, UPDATE_CHECK_INTERVAL } from "../dist/lib/update-notice.js";
+import { installAgent, updateAgent } from "../dist/bin/self-update.js";
 import updateNotice from "../dist/extensions/update-notice.js";
+import { availableUpdateLabel, setAvailableUpdates, visibleUpdateLabel } from "../dist/lib/update-status.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixtureRoot = resolve(root, ".local/update-tests");
@@ -29,10 +31,14 @@ function stage(directory, version) {
 }
 const quiet = { log() {}, async verify() {} };
 
-test("self aliases use the managed engine updater and resource updates stay native", () => {
+test("agent updates are the default, engine updates are explicit, and resource updates stay native", () => {
   for (const args of [["update"], ["update", "self"], ["update", "pi"], ["update", "--self"]]) {
-    assert.equal(planUpdate(args).type, "engine");
+    assert.equal(planUpdate(args).type, args.includes("pi") ? "engine" : "package");
   }
+  assert.deepEqual(planUpdate(["update", "--check"]), { type: "package", checkOnly: true });
+  assert.equal(planUpdate(["update", "--engine"]).type, "engine");
+  assert.equal(planUpdate(["update", "--engine", "--check"]).checkOnly, true);
+  assert.throws(() => planUpdate(["update", "self", "--rollback"]), /Use pi update/);
   assert.deepEqual(planUpdate(["update", "--all"]).extensionArgs, ["update", "--extensions"]);
   for (const args of [["update", "--models"], ["update", "--extensions"], ["update", "--extension", "pi"]]) {
     assert.deepEqual(planUpdate(args), { type: "upstream", args });
@@ -40,6 +46,91 @@ test("self aliases use the managed engine updater and resource updates stay nati
   assert.equal(planUpdate(["update", "--to", "1.4.0", "--offline"]).version, "1.4.0");
   assert.throws(() => planUpdate(["update", "--to", "../../other"]), /exact Pi version/);
   assert.throws(() => planUpdate(["update", "--rollback", "--all"]), /cannot be combined/);
+});
+
+test("agent updates install an exact release into the current global prefix", async (t) => {
+  const directory = fixture(t);
+  const globalRoot = process.platform === "win32" ? join(directory, "node_modules") : join(directory, "lib", "node_modules");
+  const packageRoot = join(globalRoot, "pi-extended-agent");
+  mkdirSync(packageRoot, { recursive: true });
+  const manifest = join(packageRoot, "package.json");
+  writeFileSync(manifest, JSON.stringify({ name: "pi-extended-agent", version: "1.0.0" }));
+  const calls = [], logs = [];
+  const services = { log: (line) => logs.push(line), latest: async () => "1.0.1", globalRoot: async () => globalRoot,
+    install: async (version, prefix) => {
+      calls.push([version, prefix]);
+      writeFileSync(manifest, JSON.stringify({ name: "pi-extended-agent", version }));
+    } };
+  await updateAgent(packageRoot, { checkOnly: true }, services);
+  assert.deepEqual(calls, []);
+  await updateAgent(packageRoot, {}, services);
+  assert.deepEqual(calls, [["1.0.1", directory]]);
+  assert.match(logs.join("\n"), /Restart pi/);
+  await updateAgent(packageRoot, {}, services);
+  assert.equal(calls.length, 1);
+  await updateAgent(packageRoot, {}, { ...services, latest: async () => "1.0.0" });
+  assert.equal(calls.length, 1, "a normal update must not downgrade the agent");
+});
+
+test("agent updates protect source checkouts and npm links and reject invalid releases", async (t) => {
+  const directory = fixture(t), packageRoot = join(directory, "checkout"), globalRoot = join(directory, "node_modules");
+  mkdirSync(packageRoot); mkdirSync(globalRoot);
+  writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "pi-extended-agent", version: "1.0.0" }));
+  const services = { log() {}, latest: async () => "1.0.1", globalRoot: async () => globalRoot,
+    install() { assert.fail("source checkout must not be replaced"); } };
+  await assert.rejects(updateAgent(packageRoot, {}, services), /source checkout/);
+  symlinkSync(packageRoot, join(globalRoot, "pi-extended-agent"), process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(updateAgent(packageRoot, {}, services), /npm link/);
+  for (const version of ["latest", "../../escape", "1.0.1; echo bad"]) {
+    await assert.rejects(updateAgent(packageRoot, {}, { ...services, latest: async () => version }), /Invalid target agent version/);
+  }
+});
+
+test("agent installation failures do not report success", async (t) => {
+  const directory = fixture(t), globalRoot = join(directory, "node_modules"), packageRoot = join(globalRoot, "pi-extended-agent");
+  mkdirSync(packageRoot, { recursive: true });
+  writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "pi-extended-agent", version: "1.0.0" }));
+  const logs = [], services = { log: (line) => logs.push(line), latest: async () => "1.0.1", globalRoot: async () => globalRoot };
+  await assert.rejects(updateAgent(packageRoot, {}, { ...services, install: async () => { throw Error("npm failed"); } }), /npm failed/);
+  await assert.rejects(updateAgent(packageRoot, {}, { ...services, install: async () => {} }), /did not install/);
+  assert.doesNotMatch(logs.join("\n"), /updated to/);
+  assert.equal(existsSync(join(globalRoot, ".pi-extended-agent-update.lock")), false);
+  writeFileSync(join(globalRoot, ".pi-extended-agent-update.lock"), "busy");
+  await assert.rejects(updateAgent(packageRoot, {}, { ...services, install: () => assert.fail("concurrent update must not run") }), /already locked/);
+});
+
+test("agent installation invokes npm without a shell, lifecycle scripts, or floating versions", async (t) => {
+  const directory = fixture(t), cli = join(directory, "npm-cli.js"), output = join(directory, "args.json");
+  writeFileSync(cli, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(output)}, JSON.stringify(process.argv.slice(2)));`);
+  const previous = process.env.npm_execpath;
+  process.env.npm_execpath = cli;
+  try {
+    const prefix = join(directory, "prefix with spaces");
+    await installAgent("1.0.1", prefix);
+    assert.deepEqual(JSON.parse(readFileSync(output)), ["install", "--global", "--prefix", prefix,
+      "--ignore-scripts", "--no-audit", "--no-fund", "pi-extended-agent@1.0.1"]);
+    await assert.rejects(installAgent("../../bad", prefix), /Invalid target/);
+  } finally {
+    if (previous === undefined) delete process.env.npm_execpath; else process.env.npm_execpath = previous;
+  }
+});
+
+test("runtime manifests cannot redirect the launcher outside the engine package", (t) => {
+  const directory = fixture(t);
+  stage(directory, "1.5.0");
+  const packageDir = join(directory, "releases", "1.5.0", "node_modules", PI_PACKAGE);
+  const manifest = join(packageDir, "package.json");
+  const outside = join(directory, "outside.js"); writeFileSync(outside, "throw Error('must not execute');");
+  for (const main of [outside, "../../../../../../outside.js", null]) {
+    writeFileSync(manifest, JSON.stringify({ name: PI_PACKAGE, version: "1.5.0", main, bin: { pi: "cli.js" } }));
+    assert.throws(() => describeRuntime(packageDir), /entry point/);
+  }
+  writeFileSync(manifest, JSON.stringify({ name: PI_PACKAGE, version: "1.5.0", main: "index.js", bin: { pi: outside } }));
+  assert.throws(() => describeRuntime(packageDir), /outside its package/);
+  const redirect = join(packageDir, "redirect");
+  symlinkSync(directory, redirect, process.platform === "win32" ? "junction" : "dir");
+  writeFileSync(manifest, JSON.stringify({ name: PI_PACKAGE, version: "1.5.0", main: "redirect/outside.js", bin: { pi: "cli.js" } }));
+  assert.throws(() => describeRuntime(packageDir), /outside its package/);
 });
 
 test("verified engine activation preserves the package and launcher", async (t) => {
@@ -145,6 +236,30 @@ test("startup update checks cache registry results and compare with the active e
   assert.equal(calls, 3);
 });
 
+test("agent and engine notices use separate caches and point to their own commands", async (t) => {
+  const directory = fixture(t);
+  let calls = 0;
+  const options = { directory, offline: false, now: 1000, latest: async () => { calls++; return "1.0.1"; } };
+  assert.match(await checkForAgentUpdate("1.0.0", options), /Pi Extended Agent 1\.0\.1.*Run pi update in/);
+  assert.equal(await checkForAgentUpdate("1.0.1", options), undefined);
+  assert.equal(calls, 1);
+  assert.match(await checkForEngineUpdate("1.4.0", { ...options, latest: async () => "1.5.0" }), /pi update --engine/);
+  assert.equal(JSON.parse(readFileSync(join(directory, "agent-update-check.json"))).version, "1.0.1");
+  assert.equal(JSON.parse(readFileSync(join(directory, "update-check.json"))).version, "1.5.0");
+  assert.equal(await checkForAgentUpdate("1.0.0", { ...options, offline: true }), undefined);
+});
+
+test("combined notices check both release streams without confusing their versions", async (t) => {
+  const directory = fixture(t);
+  let calls = 0;
+  const notice = await checkForUpdates("1.4.0", { directory, offline: false, latest: async () => { calls++; return "1.5.0"; } });
+  assert.equal(calls, 2);
+  assert.match(notice, /Pi Extended Agent 1\.5\.0.*pi update in/);
+  assert.match(notice, /Pi 1\.5\.0.*pi update --engine/);
+  const reports = await checkForReleaseUpdates("1.4.0", { directory, offline: false, latest: async () => assert.fail("cached release checks must not fetch") });
+  assert.deepEqual(reports.map(({ kind, command }) => [kind, command]), [["agent", "pi update"], ["engine", "pi update --engine"]]);
+});
+
 test("offline, cancelled, and failed startup checks leave the session and engine alone", async (t) => {
   const directory = fixture(t);
   let calls = 0;
@@ -173,29 +288,82 @@ test("background registry lookup has a short timeout, no retries, and supports c
   assert.equal(version, "1.5.0");
 });
 
-test("update notification never blocks startup, checks once, and cancels on shutdown", async () => {
-  const handlers = new Map(), notices = [];
+test("update notification never blocks startup, checks once, and cancels on shutdown", async (t) => {
+  const handlers = new Map(), statuses = [];
   let finish, calls = 0, signal;
   const check = (_current, options) => {
     calls++; signal = options.signal;
     return new Promise((resolve) => { finish = resolve; });
   };
   const pi = { on(event, handler) { handlers.set(event, handler); } };
-  const ctx = { mode: "tui", ui: { notify: (message) => notices.push(message) } };
+  const ctx = { mode: "tui", ui: { setStatus: (_key, message) => statuses.push(message), notify() { assert.fail("updates belong in the persistent input status"); } } };
   updateNotice(pi, check);
+  t.after(() => handlers.get("session_shutdown")());
   handlers.get("session_start")({}, { ...ctx, mode: "rpc" });
   assert.equal(calls, 0);
   assert.equal(handlers.get("session_start")({}, ctx), undefined);
   handlers.get("session_start")({}, ctx);
   assert.equal(calls, 1);
-  finish("Pi 1.5.0 is available. Run pi update.");
+  finish([{ kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "An agent update is available." }]);
   await new Promise(setImmediate);
-  assert.equal(notices.length, 1);
+  assert.equal(statuses.at(-1), undefined);
+  assert.equal(visibleUpdateLabel(), undefined);
+  assert.equal(availableUpdateLabel(), "Update 1.2.0 · pi update");
+  assert.equal(availableUpdateLabel(12), "↑ 1.2.0");
+  handlers.get("session_shutdown")();
   updateNotice(pi, check);
   handlers.get("session_start")({}, ctx);
   handlers.get("session_shutdown")();
   assert.equal(signal.aborted, true);
-  finish("must not notify after shutdown");
+  const count = statuses.length;
+  finish([{ kind: "agent", version: "9.0.0", current: "1.1.0", command: "pi update", message: "must not notify after shutdown" }]);
   await new Promise(setImmediate);
-  assert.equal(notices.length, 1);
+  assert.equal(statuses.length, count);
+  assert.equal(availableUpdateLabel(), undefined);
+});
+
+test("update slot rotates while idle and stops repainting on shutdown or when no update exists", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const handlers = new Map(), statuses = [];
+  const pi = { on: (event, handler) => handlers.set(event, handler) };
+  const ctx = { mode: "tui", ui: { setStatus: (_key, text) => statuses.push(text) } };
+  const update = { kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "Update available" };
+  updateNotice(pi, async () => [update]);
+  t.after(() => handlers.get("session_shutdown")());
+  handlers.get("session_start")({}, ctx);
+  await Promise.resolve();
+  assert.equal(visibleUpdateLabel(), undefined);
+  const count = statuses.length;
+  t.mock.timers.tick(7999);
+  assert.equal(statuses.length, count, "effort stays visible without per-frame repaints");
+  t.mock.timers.tick(1);
+  assert.equal(visibleUpdateLabel(), "Update 1.2.0 · pi update");
+  assert.equal(statuses.at(-1), visibleUpdateLabel());
+  t.mock.timers.tick(3999);
+  assert.equal(visibleUpdateLabel(), "Update 1.2.0 · pi update");
+  t.mock.timers.tick(1);
+  assert.equal(visibleUpdateLabel(), undefined);
+  t.mock.timers.tick(8000);
+  assert.equal(visibleUpdateLabel(), "Update 1.2.0 · pi update");
+  handlers.get("session_shutdown")();
+  const stopped = statuses.length;
+  t.mock.timers.tick(60000);
+  assert.equal(statuses.length, stopped);
+  assert.equal(availableUpdateLabel(), undefined);
+
+  updateNotice(pi, async () => []);
+  handlers.get("session_start")({}, ctx);
+  await Promise.resolve();
+  const noUpdate = statuses.length;
+  t.mock.timers.tick(60000);
+  assert.equal(statuses.length, noUpdate);
+});
+
+test("agent update status takes priority over the separately managed engine", () => {
+  setAvailableUpdates([
+    { kind: "engine", version: "1.5.0", current: "1.4.0", command: "pi update --engine", message: "Engine release" },
+    { kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "Agent release" },
+  ]);
+  assert.equal(availableUpdateLabel(), "Update 1.2.0 · pi update");
+  setAvailableUpdates([]);
 });
