@@ -1,0 +1,56 @@
+---
+title: Installation
+description: Install from npm or run a linked source checkout.
+---
+
+# Installation
+
+## Requirements
+
+You need Node.js **22.19 or later** and npm. On Windows, install Git for Windows
+to provide Bash for Pi's default shell tool.
+
+You will also need an account or API credentials for a provider supported by Pi.
+
+## Install with npm
+
+```sh
+npm install -g --ignore-scripts pi-extended-agent
+```
+
+The package includes Pi and the extensions. Start it from your project directory:
+
+```sh
+cd your-project
+pi
+```
+
+The alternative command `pi-extended-agent` starts the same agent.
+
+If installation reports `EEXIST`, another package may own the `pi` command.
+Follow [Already have Pi?](/getting-started/migration) to switch installations.
+
+## Install from Source
+
+Clone the repository, build it, and link the global command:
+
+```sh
+git clone https://github.com/svjszn/pi-extended-agent.git agent
+cd agent
+npm ci --ignore-scripts
+npm run build
+npm link --force --ignore-scripts
+```
+
+You can now use `pi` from another directory. The link points to this checkout,
+so keep it in place. To run without a global link, use `npm run pi`.
+
+Rebuild after changing TypeScript, then restart Pi. You only need to link again
+if you move the checkout or change the executable mapping.
+
+## Install on Another Computer
+
+Install the package and sign in with `/login` on that computer. Your credentials,
+sessions, and project memory are stored locally and are not transferred by npm.
+
+Continue with [Authentication](/getting-started/first-session).

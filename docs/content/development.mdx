@@ -1,0 +1,75 @@
+---
+title: Development
+description: Work on the TypeScript agent, run verification, and build the Nextra documentation.
+---
+
+# Development
+
+## Work on the agent
+
+```sh
+git clone https://github.com/svjszn/pi-extended-agent.git agent
+cd agent
+npm ci
+npm run check
+npm test
+```
+
+The root `AGENTS.md` describes the repository structure, product constraints,
+and checks for contributors and coding agents. TypeScript source compiles to
+`dist/`, which is ignored by Git and included in the npm artifact. Edit source
+files rather than generated JavaScript or upstream packages.
+
+The project uses Pi's extension API and a small set of isolated private
+interface adapters. Engine compatibility checks must be updated when those
+adapters change.
+
+## Verify a release
+
+```sh
+npm run release:check
+```
+
+This checks types and tests, packs the artifact, installs it in an isolated
+global prefix, and tests commands, memory, permission barriers, compaction, and
+disk resume. It does not publish the package, use your real provider profile,
+or make a model request. The validated archive is kept in `.local/releases/`.
+
+Publish that exact archive after the checks pass. Keep the package manifest,
+lockfile, changelog, and documented version aligned. Release instructions live
+in `RELEASING.md` in the repository.
+
+## Work on the documentation
+
+The Nextra site is independent from the CLI dependency tree:
+
+```sh
+cd docs
+npm ci
+npm run dev
+```
+
+Production builds export static HTML and generate a Pagefind search index:
+
+```sh
+npm run build
+```
+
+The build also copies the search index to `public/_pagefind/` for the development
+server. `npm run dev` prepares an index on first use. Rebuild to include newly
+edited content in search results.
+
+Set `DOCS_BASE_PATH=/pi-extended-agent` when building for the repository's
+GitHub Pages URL. Leave it unset for local development at the origin root.
+The GitHub Actions workflow supplies the production base path.
+
+Documentation sources live in `docs/content/`. Update the relevant `_meta.js`
+when adding navigation items. Both the site and its dependency tree stay out
+of the published CLI package.
+
+The pinned Nextra release needs a small build-time compatibility loader for its
+Layout validation with newer Zod versions. The loader applies the upstream
+children-validation fix without editing installed packages. Review and remove
+it when upgrading to a release containing that fix. Static generation uses two
+worker threads so builds also work in Windows environments with restricted
+child-process pipes.

@@ -1,0 +1,69 @@
+---
+title: Context and Prompts
+description: Check context usage, compact a session, and add instructions.
+---
+
+# Context and Prompts
+
+## Context Usage
+
+Run `/context` to see how much of the current model's context window is in use:
+
+```text
+/context
+```
+
+The screen breaks the estimate down into instructions, tools, skills, messages,
+and tool results. It also lists loaded instruction files and active tools.
+The footer shows a shorter version of the total.
+
+This measures the current context window, not all tokens billed during the
+session. A `~` marks an estimate. Images, provider formatting, and instructions
+added by extensions can affect the final request size.
+
+## Compact a Session
+
+Use Pi's native command to summarize a long conversation:
+
+```text
+/compact
+```
+
+After compaction, context usage may show `—` until the next response.
+Use `/new` when you want a fresh session instead.
+
+## Add Instructions
+
+`/prompt` shows the native Pi prompt and your additions. You can add
+instructions in three scopes:
+
+| Scope | Applies to |
+| --- | --- |
+| Session | This session |
+| Project | Sessions in this project |
+| Global | Projects using this Pi profile |
+
+For example:
+
+```text
+/prompt project Use npm for this repository.
+/prompt session Keep the explanation short.
+```
+
+To edit longer instructions, open the editor without inline text:
+
+```text
+/prompt project
+```
+
+In `/prompt`, use Tab to choose a section, **e** to edit, and **d** to clear
+additions. Ctrl+S saves an edit; Escape cancels it.
+
+## How Instructions Apply
+
+Additions apply on the next run, in global, project, then session order, and are
+limited to 12 KB per scope. They extend Pi's native prompt. The effective
+preview may differ from the final request if other extensions add instructions.
+
+For instructions shared with other contributors, use a repository `AGENTS.md`.
+Prompt additions stay in your local profile.

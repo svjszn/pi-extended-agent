@@ -1,0 +1,55 @@
+{
+  "name": "pi-extended-agent",
+  "version": "1.0.0",
+  "description": "Pi Coding Agent with a custom interface and managed engine updates",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/svjszn/pi-extended-agent.git"
+  },
+  "homepage": "https://github.com/svjszn/pi-extended-agent#readme",
+  "bugs": { "url": "https://github.com/svjszn/pi-extended-agent/issues" },
+  "keywords": ["pi", "coding-agent", "cli", "terminal", "ai"],
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "pi": "bin/pi.mjs",
+    "pi-extended-agent": "bin/pi.mjs"
+  },
+  "scripts": {
+    "start": "node bin/pi.mjs",
+    "pi": "node bin/pi.mjs",
+    "check": "npm run typecheck",
+    "test": "node --test --test-isolation=none test/pi-interface.test.mjs test/startup.test.mjs test/escape-exit.test.mjs test/update.test.mjs test/commands.test.mjs test/skills.test.mjs test/context.test.mjs test/effort.test.mjs test/command-policy.test.mjs test/permissions.test.mjs test/model-screen.test.mjs test/workspace.test.mjs",
+    "smoke": "node bin/pi.mjs --no-session --no-tools --no-extensions --no-skills --no-prompt-templates --no-context-files --print \"Reply with exactly: PI_OK\"",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "release:check": "node scripts/release-check.mjs",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
+    "pretest": "npm run build",
+    "prestart": "npm run build",
+    "prepi": "npm run build"
+  },
+  "files": [
+    "bin/pi.mjs",
+    "dist/",
+    "ui/*.svg",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/extensions"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "typescript": "6.0.3"
+  }
+}

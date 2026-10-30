@@ -1,0 +1,56 @@
+---
+title: Permissions
+description: Choose which agent actions can run and which need approval.
+---
+
+# Permissions
+
+New sessions use **Full access**. To review changes and shell commands before
+they run, switch to Ask mode:
+
+```text
+/permissions ask
+```
+
+Open `/permissions` without an argument to choose a mode interactively.
+
+## Available Modes
+
+| Mode | What the agent can do |
+| --- | --- |
+| `full` | Run tools without approval prompts |
+| `ask` | Read and search freely; request approval for changes, shell commands, and external tools |
+| `read-only` | Use built-in file reading and search; block changes, shell commands, and external tools |
+
+The footer shows `auto mode`, `ask mode`, or `read only`. Your choice is
+saved with the session and restored when you resume it.
+
+Memory reads and plan updates are available in all modes. Memory saves and
+deletes require approval in Ask mode and are blocked in Read only mode.
+
+## Approve an Action
+
+The approval screen shows the tool, working directory, and full input. Scroll
+to inspect a long command or change.
+
+The default choice is **Deny**. Use Left/Right to select **Allow once**, then
+Enter to confirm. Escape denies the action.
+
+Each call needs its own approval. Changing mode or closing the session cancels
+pending approvals. Tools that are already running continue under their
+existing permissions.
+
+## Scope
+
+Permissions apply to agent tool calls, including calls made through other tools.
+They are not an operating-system sandbox or a directory boundary.
+
+Commands you enter explicitly with `!` or `!!`, slash-command actions such as
+installing a skill, and code run directly by extensions keep their existing
+behavior. Project trust is a separate Pi setting.
+
+In print mode, actions that require approval are denied. RPC clients must
+respond to the confirmation request.
+
+[Plan mode](/guide/planning) blocks changes and shell commands even with
+Full access until you approve execution.

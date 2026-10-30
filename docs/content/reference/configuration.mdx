@@ -1,0 +1,47 @@
+---
+title: Configuration
+description: Find profile data, project state, managed engines, and environment overrides.
+---
+
+# Configuration
+
+## Configuration screen
+
+`/config` opens Current session, Saved preferences, and Files. Tab switches to
+Preferences, which reuses Pi's native settings and save callbacks. Settings
+include themes, model defaults, effort defaults, transport, compaction, image
+handling, and terminal behavior.
+
+Use arrows to navigate, Enter to edit, and type to filter. Escape backs out of
+a submenu, returns to the overview, then closes the panel. Changing TUI mode
+briefly closes and reopens the panel so Pi can switch renderers.
+
+Project settings respect Pi's trust decision. In print/RPC mode, `/config`
+shows the read-only overview. Credentials are excluded from the display.
+
+## Storage locations
+
+| Data | Default location |
+| --- | --- |
+| Pi profile, settings, authentication, and sessions | `~/.pi/agent/` |
+| Project settings | `<project>/.pi/settings.json` |
+| Project skills | `<project>/.pi/skills/` |
+| Global skills | `~/.pi/agent/skills/` |
+| Global prompt additions | `~/.pi/agent/pi-extended/prompt.md` |
+| Project memory, prompts, and session plans | `~/.pi/agent/pi-extended/projects/PROJECT_KEY/` |
+| Managed engines and update cache | `~/.pi/pi-extended-agent/` |
+
+On Windows, the standard profile is normally
+`C:\Users\YOUR_NAME\.pi\agent\`. Git worktrees use the same project key;
+unrelated repositories use different keys.
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `PI_CODING_AGENT_DIR` | Choose a different Pi profile |
+| `PI_EXTENDED_RUNTIME_DIR` | Choose a different managed-engine directory |
+| `PI_OFFLINE` | Skip startup update checks and use cached engine selection for offline updates |
+
+Configuration, credentials, memory, and sessions belong to the active profile
+on each computer. Use `/config` to check which profile is currently in use.

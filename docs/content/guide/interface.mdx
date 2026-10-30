@@ -1,0 +1,54 @@
+---
+title: Terminal Interface
+description: Navigate the chat, command screens, and keyboard shortcuts.
+---
+
+# Terminal Interface
+
+The header shows the Pi engine version, current model, reasoning effort, and
+working directory. The input stays below the conversation. Under it, you can
+see the current mode and context usage.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| Shift+Tab | Switch between normal mode and plan mode |
+| Shift+Left / Shift+Right | Decrease / increase reasoning effort |
+| Escape | Exit when the input is empty and the agent is idle |
+
+During a run, Escape keeps Pi's cancellation behavior. If you have a draft or
+autocomplete is open, Escape handles that state first.
+
+Wait for the current run and queued messages to finish before switching modes.
+Switching modes keeps your draft, permission choice, and effort.
+
+## Command Screens
+
+Enter a slash command such as `/status`, `/context`, or `/config` to open its
+screen. Available actions are shown at the bottom.
+
+- **Escape** closes a viewer or goes back.
+- **Tab** changes sections in screens such as `/config`, `/memory`, and `/skills`.
+- **Up/Down**, **Page Up/Down**, **Home/End**, and the mouse wheel scroll viewers.
+- In text editors, **Enter** inserts a newline, **Ctrl+S** saves, and **Escape** cancels.
+
+Opening an information screen does not send a request to a model.
+
+## Account Usage
+
+`/usage` shows available account limits and reset times for the active provider.
+ChatGPT OAuth is supported. A Claude OAuth reader is also included, but has
+not been verified with a live Claude account.
+
+API keys and some providers do not expose account limits. When data is
+unavailable, the screen says so; local token counts are not used to guess
+your remaining allowance.
+
+## Activity
+
+`/stats` shows your local activity calendar, tokens, sessions, and streaks.
+Use Tab or Left/Right to switch between All time, Last 7 days, and Last 30 days.
+
+These statistics come from this profile's session history. They do not include
+work on other computers or activity in the Codex app.

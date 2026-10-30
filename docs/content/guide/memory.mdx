@@ -1,0 +1,72 @@
+---
+title: Project Memory
+description: Save useful project facts and reuse them in later sessions.
+---
+
+# Project Memory
+
+Project memory keeps information the agent can use in later sessions, such as
+your preferences, environment details, and project decisions. It is enabled
+by default.
+
+For example, you can ask:
+
+```text
+Remember that this project uses npm and that tests need a local database.
+```
+
+The agent can save a note during the conversation. Open `/memory` to inspect
+what has been saved.
+
+## View and Edit Notes
+
+In the memory screen, Tab changes topics. The actions at the bottom let you
+create, edit, or delete a note:
+
+| Key | Action |
+| --- | --- |
+| n | Create a topic |
+| e | Edit the selected topic |
+| d | Delete the selected topic after confirmation |
+| t | Turn automatic memory on or off |
+
+Keep the `Title:` and `Summary:` lines when editing. Enter inserts a newline,
+Ctrl+S saves, and Escape discards changes.
+
+You can also work with a topic directly:
+
+```text
+/memory read project-notes
+/memory edit project-notes
+/memory delete project-notes
+```
+
+Topic IDs use lowercase letters, digits, and hyphens, up to 64 characters.
+The ID `memory` is reserved for the index.
+
+## Turn Memory Off
+
+```text
+/memory off
+```
+
+This keeps existing notes but stops loading them into context and prevents the
+agent from accessing them. Run `/memory on` to enable memory again.
+
+## What Is Loaded
+
+A short index is included in context; full notes are read when relevant.
+The notebook supports up to 32 topics, with a 160-byte summary and up to 12 KB
+of details per topic.
+
+Use memory for durable facts rather than transcripts or temporary progress.
+Do not store credentials. Common credential patterns are rejected on save.
+
+## Where Notes Are Stored
+
+Notes live in your local Pi profile, outside the repository. Git worktrees
+of the same repository share a notebook. Separate repositories have separate
+notebooks.
+
+Loaded notes are sent to the selected model provider as part of the context.
+See [Configuration and storage](/reference/configuration) for paths.

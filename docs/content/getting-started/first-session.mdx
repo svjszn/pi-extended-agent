@@ -1,0 +1,47 @@
+---
+title: Authentication
+description: Connect a provider account and check your session.
+---
+
+# Authentication
+
+Pi Extended Agent uses Pi's provider authentication. Start the agent and enter:
+
+```text
+/login
+```
+
+Choose a provider and follow its sign-in flow. For example, select
+ChatGPT/Codex to connect your ChatGPT account.
+
+If you already use Pi with the standard profile, your saved credentials are
+reused. You do not need to sign in again just because you switch to this package.
+
+## Check Your Login
+
+Run `/status` to see the configured login method, current model, and engine
+version. If authentication is missing, the header shows a login hint.
+
+```text
+/status
+```
+
+The status screen reads local configuration. A configured login does not
+confirm that a token is still valid with the provider.
+
+## Select a Model
+
+After signing in, run `/model` to choose an available model. Which models appear
+depends on your provider and account.
+
+See [Models and effort](/guide/models) for switching models and saving a default.
+
+## Profiles
+
+The default profile is `~/.pi/agent/`. It contains your settings, credentials,
+and sessions. Each computer needs its own sign-in.
+
+If a login seems to be missing, check whether `PI_CODING_AGENT_DIR` points to a
+different profile. You can inspect the paths in `/config`.
+
+See [Configuration and storage](/reference/configuration) for profile locations.

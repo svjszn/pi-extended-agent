@@ -1,0 +1,65 @@
+---
+title: Troubleshooting
+description: Resolve command conflicts, missing authentication, and engine update problems.
+---
+
+# Troubleshooting
+
+## The original Pi interface opens
+
+Check `Get-Command pi -All` in PowerShell or `type -a pi` in Bash/Zsh. Another
+installation may own the command or appear earlier on PATH. Follow the
+[migration guide](/getting-started/migration). The `pi-extended-agent` executable
+can launch this package directly while you resolve the conflict.
+
+For a linked checkout, run `npm run build` and restart Pi after editing source.
+
+## Authentication is missing
+
+Use `/login` on this computer and inspect `/status`. Check whether
+`PI_CODING_AGENT_DIR` selects an unexpected profile. The standard profile is
+`~/.pi/agent/`; early local test profiles are not selected automatically.
+
+## Usage is unavailable
+
+The account readers require supported OAuth authentication and provider
+access. API keys and unsupported providers can lack account-limit data. A
+missing value is not treated as zero usage or unlimited allowance. Claude
+OAuth usage has fixture coverage but is not verified with a live account.
+
+## An engine update times out
+
+Check connectivity, npm registry settings, and proxy or certificate settings.
+If version lookup is failing, an exact version skips that lookup:
+
+```sh
+pi update --to 1.4.0
+```
+
+Installation still needs registry access or cached packages. Failed updates
+leave the previous engine active. After a successful update, use
+`pi update --rollback` to select the previous engine if necessary.
+
+## The updater or memory store reports a lock
+
+An interrupted process can leave a lock. Verify that no corresponding update
+or memory write is running before removing the exact lock file reported by
+the error. Then retry the operation.
+
+## A memory ID is rejected
+
+Use lowercase letters, digits, and hyphens, up to 64 characters. The ID `memory`
+is reserved because `memory.md` would collide with the `MEMORY.md` index on
+Windows. Choose a descriptive topic such as `project-notes`.
+
+## Project skill installation is blocked
+
+Project installation requires Pi's trust decision. Reopen Pi and approve the
+project when prompted, or choose All projects for a global installation.
+Existing skill folders are not overwritten.
+
+## Context shows an unknown value
+
+After compaction, Pi may not know the current total until a new response.
+`—` indicates that state. `/context` reports current-window estimates rather
+than cumulative billed usage.

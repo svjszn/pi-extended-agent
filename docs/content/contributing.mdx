@@ -1,0 +1,88 @@
+---
+title: Contributing
+description: Report a bug, improve the documentation, or submit a change to Pi Extended Agent.
+---
+
+# Contributing
+
+You can contribute bug fixes, documentation, tests, and interface improvements.
+If you are unsure about the approach for a larger feature, open an
+[issue](https://github.com/svjszn/pi-extended-agent/issues) to discuss it.
+
+## Report a Bug
+
+Include the steps to reproduce, what you expected, and what happened. For a
+terminal issue, include your operating system, terminal application, Node.js
+version, and Pi version from `/status`.
+
+Share relevant error output, with credentials and personal information removed.
+
+## Set Up the Project
+
+You need Node.js **22.19 or later** and npm. Fork the repository on GitHub, then
+clone your fork and create a branch:
+
+```sh
+git clone https://github.com/YOUR_USERNAME/pi-extended-agent.git
+cd pi-extended-agent
+git switch -c fix/short-description
+npm ci
+```
+
+Read [AGENTS.md](https://github.com/svjszn/pi-extended-agent/blob/main/AGENTS.md)
+for the repository structure and conventions. The agent is written in TypeScript;
+edit source files and build with `npm run build`. Generated JavaScript in `dist/`
+is not committed.
+
+You can start the local agent with `npm run pi`. See
+[Development](/development) for build details and runtime compatibility checks.
+
+## Check a Code Change
+
+Run the type checker and tests before opening a pull request:
+
+```sh
+npm run check
+npm test
+```
+
+`npm test` builds the agent first. Add a regression test when fixing behavior,
+especially for permissions, saved state, or engine compatibility. Automated
+checks use isolated fixtures and do not need a provider account.
+
+For terminal interface changes, check narrow and wide windows and include a
+screenshot when possible.
+
+## Improve the Documentation
+
+The documentation is a separate Nextra project. From the repository root:
+
+```sh
+npm ci --prefix docs
+npm run dev --prefix docs
+```
+
+Write documentation in English. Pages live in `docs/content/`; add a navigation
+entry to the relevant `_meta.js` when creating a page. Use examples that match
+the implemented commands.
+
+Build before submitting:
+
+```sh
+npm run build --prefix docs
+```
+
+The build checks internal links and assets and generates the search index.
+Search in the development server uses the latest built index.
+
+## Open a Pull Request
+
+Push your branch to your fork and open a pull request against `main` in
+[svjszn/pi-extended-agent](https://github.com/svjszn/pi-extended-agent/pulls).
+
+Describe the problem, the change, and the checks you ran. Link the relevant
+issue if there is one. Keep unrelated cleanup in a separate change, and include
+documentation when behavior or commands change.
+
+Keep generated files, local profiles, credentials, and build caches out of the
+pull request. Release publication is handled separately from contributions.

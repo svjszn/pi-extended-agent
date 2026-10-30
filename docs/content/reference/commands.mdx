@@ -1,0 +1,64 @@
+---
+title: Commands
+description: Slash commands and terminal commands available in Pi Extended Agent.
+---
+
+# Commands
+
+## Inside Pi
+
+| Command | Purpose |
+| --- | --- |
+| `/usage` | Available account usage limits for the active provider |
+| `/stats` | Local activity calendar and history statistics |
+| `/status` | Engine version, session ID, login, model, MCP metadata, and tools |
+| `/config` | Configuration overview and editable Preferences tab |
+| `/context` | Context estimate, breakdown, and loaded resources |
+| `/effort [level]` | Choose or directly set a supported reasoning level |
+| `/permissions [mode]` | `full`, `ask`, or `read-only` |
+| `/memory` | View, edit, delete, and toggle project memory |
+| `/plan [goal]` | Start research, review a plan, and explicitly approve execution |
+| `/prompt [scope] [text]` | Preview instructions; edit session, project, or global additions |
+| `/model [query]` | Search models, select one, or save a default |
+| `/skills [query]` | List, search, preview, and install skills |
+
+Native Pi commands such as `/login`, `/logout`, `/new`, `/resume`, `/compact`,
+`/reload`, and `/quit` remain available.
+
+### Memory actions
+
+`/memory` accepts `list`, `read ID`, `edit ID`, `delete ID`, `add`, `on`, and `off`.
+
+### Plan actions
+
+`/plan` accepts `show`, `start`, `edit`, `execute`, and `cancel`. Other text is
+treated as a new goal and starts a research task.
+
+### Simplified command menu
+
+The following commands are omitted and rejected when entered manually:
+
+```text
+/settings  /tree  /thinking  /scoped-models  /import  /export
+/share  /bug  /copy  /session  /changelog  /hotkeys  /fork
+/clone  /trust  /about-agent  /llama  /mcp
+```
+
+Use `/config` for preferences, `/effort` for reasoning, and `/status` for session
+information. MCP management remains available through Pi's terminal CLI.
+
+## In your terminal
+
+```sh
+pi
+pi --continue
+pi --model PROVIDER/MODEL_ID
+pi --tui-mode regular
+pi --help
+pi update
+pi update --check
+pi update --rollback
+```
+
+`pi-extended-agent` is an alias for the same executable. Update options are
+described in [Updates](/guide/updates).

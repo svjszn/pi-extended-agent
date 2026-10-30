@@ -1,0 +1,50 @@
+---
+title: Already have Pi?
+description: Switch to Pi Extended Agent while keeping your existing Pi profile.
+---
+
+# Already have Pi?
+
+Upstream Pi and Pi Extended Agent both provide `pi`. npm may report `EEXIST`
+instead of replacing a command owned by another package.
+
+## Switch an npm installation
+
+```sh
+npm uninstall -g @earendil-works/pi-coding-agent
+npm install -g --ignore-scripts pi-extended-agent
+pi
+```
+
+Your standard `~/.pi/agent/` profile remains in place, including sign-in, settings,
+and sessions. Uninstalling the upstream npm package does not delete that profile.
+
+For a source checkout, replace the install command with
+`npm link --force --ignore-scripts` from the checkout. If you linked the early
+package name `local-coding-agent`, unlink it first:
+
+```sh
+npm unlink -g local-coding-agent
+```
+
+## Check which command runs
+
+In PowerShell:
+
+```powershell
+Get-Command pi -All
+```
+
+In Bash or Zsh:
+
+```sh
+type -a pi
+```
+
+A standalone Pi installation or another npm prefix can appear earlier on PATH.
+Use `pi-extended-agent` directly while adjusting PATH or removing the previous
+installation through its package manager.
+
+`npm install -g --force --ignore-scripts pi-extended-agent` can explicitly take
+over the command, but leaves the old package installed. Reinstalling that old
+package later can claim `pi` again. Removing it first avoids the conflict.

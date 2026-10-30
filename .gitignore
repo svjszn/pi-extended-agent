@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.local/
+.env
+.env.*
+!.env.example
+auth.json
+*.log
+docs/.next/
+docs/out/
+docs/public/_pagefind/
+docs/next-env.d.ts

@@ -1,0 +1,82 @@
+---
+title: Getting Started
+description: Install Pi Extended Agent and start your first coding session.
+---
+
+# Getting Started
+
+**Pi Extended Agent** is a terminal coding agent built on [Pi](https://pi.dev).
+It adds project memory, planning, permission controls, and a custom interface.
+You can use it with the models and providers supported by Pi.
+
+## Installation
+
+You need **Node.js 22.19 or later**. Install the package globally with npm:
+
+```sh
+npm install -g --ignore-scripts pi-extended-agent
+```
+
+Pi is included in the package. If you already have a `pi` command installed,
+follow [Already have Pi?](/getting-started/migration) first.
+
+## Quick Start
+
+Open a terminal in your project and start the agent:
+
+```sh
+cd your-project
+pi
+```
+
+Inside Pi, run `/login` and follow the sign-in flow for your provider. Existing
+credentials in your Pi profile are reused.
+
+```text
+/login
+```
+
+You can now describe a task in the chat:
+
+```text
+Read this project and explain where the application starts.
+```
+
+The agent can read files, run tools, and make changes in your project. New
+sessions use Full access by default. To approve changes and shell commands
+before they run, enter `/permissions ask`.
+
+## Choose a Model
+
+Run `/model` to choose from the models available to your account. Use `/effort`
+to change reasoning effort for models that support it.
+
+```text
+/model
+/effort medium
+```
+
+Model selection and authentication are handled by Pi. See
+[Models and effort](/guide/models) for selection shortcuts and defaults.
+
+## Plan a Change
+
+For a task you want to review before implementation, start a plan:
+
+```text
+/plan Add pagination to the search results
+```
+
+The agent researches the project and proposes steps. Open `/plan` to review
+them, then run `/plan execute` when you want implementation to begin.
+While planning, changes and shell commands are blocked.
+
+See [Planning](/guide/planning) for editing, pausing, and resuming a plan.
+
+## Next Steps
+
+- [Commands](/reference/commands): find the available slash and terminal commands.
+- [Project memory](/guide/memory): keep useful project facts across sessions.
+- [Context and prompts](/guide/context): inspect context usage and add instructions.
+- [Skills](/guide/skills): find and install reusable skills from the agent.
+- [Updates](/guide/updates): update Pi and Pi Extended Agent.

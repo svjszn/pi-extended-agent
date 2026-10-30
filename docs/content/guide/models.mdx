@@ -1,0 +1,55 @@
+---
+title: Models and Effort
+description: Switch models, save a default, and adjust reasoning effort.
+---
+
+# Models and Effort
+
+## Select a Model
+
+Enter `/model` to search the models available to your account:
+
+```text
+/model
+```
+
+Type to filter, select a model with Up/Down, and press Enter. A filled circle
+marks the current model. Escape cancels.
+
+You can also open the selector with a search term:
+
+```text
+/model gpt
+```
+
+## Save a Default
+
+Highlight a model and press **Ctrl+S** to save it as the default. If scoped
+models are configured, Tab switches between scopes.
+
+Startup selection follows Pi's saved settings and provider defaults. An
+explicit terminal option can choose a model for a session:
+
+```sh
+pi --model PROVIDER/MODEL_ID
+```
+
+Use an ID from your provider's catalog.
+
+## Reasoning Effort
+
+Open `/effort` to choose a level supported by the current model, or set one
+directly:
+
+```text
+/effort medium
+```
+
+Available levels depend on the model. The selector shows only supported values;
+an unsupported direct value is rejected.
+
+In chat, **Shift+Left** and **Shift+Right** step through the available levels.
+The current level appears above the input. These changes apply to the session.
+
+Use `/status` to inspect the model and login, or `/usage` for available account
+limits.

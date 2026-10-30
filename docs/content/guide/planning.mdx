@@ -1,0 +1,53 @@
+---
+title: Planning
+description: Review a proposed change before the agent starts implementation.
+---
+
+# Planning
+
+Plan mode lets the agent research a task and prepare steps before changing
+files. Start with a goal:
+
+```text
+/plan Add pagination to the search results
+```
+
+The agent reads the project, prepares a plan, and waits for you to approve it.
+Changes and shell commands are blocked during this stage.
+
+## Review the Plan
+
+Open `/plan` to see the goal, steps, affected areas, and checks. To change the
+proposal, press **e** or enter:
+
+```text
+/plan edit
+```
+
+Save the edited plan with Ctrl+S.
+
+## Start Implementation
+
+When the plan is ready, run:
+
+```text
+/plan execute
+```
+
+You can also press **x** in the plan screen. The agent begins implementation and
+tracks progress through the steps.
+
+Your current [permission mode](/guide/permissions) still applies. For example,
+Ask mode continues to request approval for changes and shell commands.
+
+## Pause or Cancel
+
+**Shift+Tab** switches between normal mode and plan mode while idle. Leaving
+plan mode pauses the draft; switching back restores it. The shortcut does not
+start implementation.
+
+Use `/plan start` to enter planning without sending a goal. Use `/plan cancel`
+to leave planning without executing the plan.
+
+Plans are saved with the session and survive compaction and restarts. Resume
+the same session to continue working with its plan.

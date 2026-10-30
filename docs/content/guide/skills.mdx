@@ -1,0 +1,52 @@
+---
+title: Skills
+description: Search for skills and install them in your project or profile.
+---
+
+# Skills
+
+Skills provide reusable instructions for specific tasks. Open `/skills` to
+browse loaded skills, or enter a query to search the public catalog:
+
+```text
+/skills react
+```
+
+## Find a Skill
+
+The Installed tab lists skills discovered by Pi. Type to filter the list.
+A filled circle **●** marks a skill loaded in this session; **○** marks one
+that is not loaded.
+
+In Search, type at least two characters to search skills.sh. Select a result
+with Up/Down and press Enter to read its `SKILL.md` preview from GitHub.
+
+## Install a Skill
+
+In the preview, choose an installation scope with Tab or Left/Right:
+
+| Scope | Location |
+| --- | --- |
+| This project | `.pi/skills/` in the project |
+| All projects | `skills/` in your Pi profile |
+
+Press Enter to install. After installation, Enter returns to chat and reloads
+the available skills.
+
+Project installation requires Pi's trust decision. If it is blocked, reopen
+Pi and approve the project when prompted, or choose All projects.
+
+## Installation Details
+
+The preview and download use the same pinned Git commit. The skill directory
+is downloaded with its references, scripts, and assets, and file hashes are
+verified. Installation does not run scripts or install the skill's dependencies.
+
+Existing skill folders are not overwritten. Escape cancels a download; failed
+or cancelled installs are cleaned up.
+
+This version supports public GitHub skills from the catalog, up to 200 files,
+2 MiB per file, and 25 MiB total. Symlinks and submodules are unsupported.
+Public API rate limits apply.
+
+In print and RPC modes, `/skills` supports listing and search only.

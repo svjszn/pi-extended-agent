@@ -1,0 +1,22 @@
+{
+  "name": "pi-extended-agent-docs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "scripts": {
+    "predev": "node scripts/prepare-search.mjs",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "postbuild": "pagefind --site out --output-path out/_pagefind && node scripts/sync-search.mjs && node scripts/check-export.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "dependencies": {
+    "next": "16.4.2",
+    "nextra": "4.6.1",
+    "nextra-theme-docs": "4.6.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": { "pagefind": "1.5.2" }
+}

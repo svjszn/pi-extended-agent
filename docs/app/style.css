@@ -1,0 +1,82 @@
+:root {
+  --pi-foreground: #000;
+  --pi-secondary: #222;
+  --pi-border: #eaeaea;
+}
+
+.dark {
+  --pi-foreground: #fff;
+  --pi-secondary: #a1a1a1;
+  --pi-border: #333;
+}
+
+html.dark,
+.dark .pi-docs {
+  background-color: #000;
+}
+
+body {
+  color: var(--pi-foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pi-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--pi-foreground);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  white-space: nowrap;
+}
+
+.pi-brand svg { flex-shrink: 0; }
+
+.pi-docs article {
+  color: var(--pi-foreground);
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.pi-docs article :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--pi-foreground);
+}
+
+.pi-docs .nextra-sidebar li:not(.active) > a,
+.pi-docs .nextra-toc a:not([class*="text-primary"]) {
+  color: var(--pi-secondary);
+}
+
+.pi-docs article h1 {
+  margin-top: 1.5rem;
+  font-size: 32px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -.035em;
+}
+
+.pi-docs article h2 {
+  font-size: 23px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.pi-docs article h3 { font-size: 18px; font-weight: 600; letter-spacing: -.015em; }
+.pi-docs article pre { font-size: 13px; line-height: 1.75; }
+.pi-docs .nextra-code span {
+  color: var(--pi-foreground);
+  background-color: transparent;
+}
+.pi-docs article table { font-size: 14px; }
+.nextra-navbar-blur { border-bottom-color: var(--pi-border); }
+a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+
+@media (max-width: 640px) {
+  .pi-brand { font-size: 14px; gap: 8px; }
+  .pi-docs article h1 { font-size: 28px; }
+}
