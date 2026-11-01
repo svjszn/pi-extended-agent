@@ -82,7 +82,7 @@ test("appearance commands persist validated choices, restore on restart, and rol
 test("green accents input borders and the Pi logo while text stays neutral in both themes", (t) => {
   fixture(t);
   const theme = createUiTheme(), muted = theme.fg("muted", "text"), primary = theme.fg("primary", "text");
-  const header = createHeader({ mode: "regular" }, getThemeByName("dark"), measure,
+  const header = createHeader({ mode: "regular" }, measure,
     { version: "1.4.0", getModel: () => ({ id: "test-model" }), getThinkingLevel: () => "medium" });
   t.after(() => header.dispose());
   setAppearance({ mode: "dark", color: "green" });

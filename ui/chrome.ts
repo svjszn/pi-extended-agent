@@ -1,4 +1,5 @@
 import { createChatStyle } from "./chat.js";
+import { shareTranscriptFrame } from "../bin/transcript-interface.js";
 import type { HeaderTui, Palette, TreeComponent } from "./types.js";
 import type { Terminal, truncateToWidth as truncate } from "@earendil-works/pi-tui";
 import type { ContextSummary } from "../lib/context.js";
@@ -16,22 +17,43 @@ interface HeaderInfo {
 }
 type HeaderMeasure = { truncateToWidth: typeof truncate };
 
-export function pinTerminalTitle(terminal: Pick<Terminal, "setTitle">) {
+/** Session-owned terminal chrome; never change the user's terminal settings. */
+export function pinTerminalTitle(terminal: Pick<Terminal, "setTitle"> & Partial<Pick<Terminal, "setProgress">>, platform = process.platform) {
   const original = terminal.setTitle;
-  const setTitle = () => original.call(terminal, "Pi Coding Agent");
+  const originalProgress = terminal.setProgress;
+  let disposed = false;
+  const refresh = () => { if (!disposed) original.call(terminal, "Pi Coding Agent"); };
+  const setTitle = () => refresh();
+  const quietProgress = (_active: boolean) => {};
   terminal.setTitle = setTitle;
-  setTitle();
-  return () => { if (terminal.setTitle === setTitle) terminal.setTitle = original; };
+  if (platform === "win32" && originalProgress) {
+    // Stop an existing keepalive before suppressing future OSC 9;4 signals.
+    originalProgress.call(terminal, false);
+    terminal.setProgress = quietProgress;
+  }
+  refresh();
+  return Object.assign(() => {
+    if (disposed) return;
+    disposed = true;
+    if (terminal.setTitle === setTitle) terminal.setTitle = original;
+    if (terminal.setProgress === quietProgress) terminal.setProgress = originalProgress;
+  }, { refresh });
 }
 
-export function createHeader(tui: HeaderTui, theme: Palette, { truncateToWidth }: HeaderMeasure, info: HeaderInfo) {
+/** The header owns the shared appearance palette; it never renders with the native theme. */
+export function createHeader(tui: HeaderTui, { truncateToWidth }: HeaderMeasure, info: HeaderInfo) {
   let hiddenResources: { document: TreeComponent & { children: TreeComponent[] }; component: TreeComponent; index: number } | undefined;
   const palette = createUiTheme();
   const ink = (text: string) => palette.fg("primary", text);
   const chatStyle = createChatStyle(() => tui.requestRender?.());
+  // Install before the first document frame, not from inside header.render().
+  // Pi mounts the document with its header container first and chat last.
+  const document = tui.children?.find((component) => Array.isArray(component.children?.[0]?.children));
+  const restoreFrame = tui.mode === "fullscreen" && document ? shareTranscriptFrame(document) : undefined;
   const header = {
     invalidate() {},
     dispose() {
+      restoreFrame?.();
       chatStyle.dispose();
       if (!hiddenResources) return;
       const { document, component, index } = hiddenResources;
@@ -59,9 +81,9 @@ export function createHeader(tui: HeaderTui, theme: Palette, { truncateToWidth }
       if (authNotice) lines.push(truncateToWidth(`  ${palette.fg("muted", authNotice)}`, width));
       // Command overlays reuse the header without mounting a chat document.
       if (!Array.isArray(tui.children)) return lines;
-      // The public TUI tree contains the document and input dock. Measure the
-      // other components to give short conversations flexible space above them.
-      // When the transcript fills the viewport, this space naturally reaches 0.
+      // Short conversations need flexible space above them. In fullscreen the
+      // document adapter shares these measurements with the real render, so
+      // counting chat rows no longer renders its messages a second time.
       const document = tui.children.find((component) =>
         component.children?.some((child) => child.children?.includes(header)),
       );

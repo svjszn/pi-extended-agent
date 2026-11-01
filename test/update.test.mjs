@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { planUpdate, updateEngine, latestVersion } from "../dist/bin/update.js";
+import { tmpdir } from "node:os";
+import { captureCommand, planUpdate, updateEngine, latestVersion } from "../dist/bin/update.js";
 import { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime, describeRuntime } from "../dist/bin/runtime.js";
 import { checkForEngineUpdate, checkForAgentUpdate, checkForUpdates, checkForReleaseUpdates, UPDATE_CHECK_INTERVAL } from "../dist/lib/update-notice.js";
 import { installAgent, updateAgent } from "../dist/bin/self-update.js";
@@ -196,6 +197,19 @@ test("release lookup uses npm with a retry and rejects invalid metadata", async 
   }
 });
 
+test("captured command output is returned, reported on failure, and leaves no temporary files", async () => {
+  const staged = () => readdirSync(tmpdir()).filter((name) => name.startsWith("pi-version-")).length;
+  const before = staged();
+  assert.equal((await captureCommand(process.execPath, ["-e", "process.stdout.write('\"1.4.0\"')"], {})).stdout, '"1.4.0"');
+  await assert.rejects(captureCommand(process.execPath, ["-e", "process.stderr.write('npm failed here'); process.exit(3)"], {}),
+    (error) => {
+      assert.match(error.message, /exited with code 3/);
+      assert.match(error.stderr, /npm failed here/);
+      return true;
+    });
+  assert.equal(staged(), before);
+});
+
 test("release lookup timeout explains recovery and preserves the active engine", async (t) => {
   const directory = fixture(t);
   stage(directory, "1.3.0");
@@ -283,6 +297,8 @@ test("background registry lookup has a short timeout, no retries, and supports c
     assert.ok(args.includes("--fetch-retries=0"));
     assert.equal(options.timeout, 6000);
     assert.equal(options.signal, controller.signal);
+    assert.equal(options.windowsHide, true);
+    assert.equal(options.detached, process.platform === "win32", "background npm must not share the Windows console title");
     return { stdout: '"1.5.0"' };
   }, { background: true, signal: controller.signal });
   assert.equal(version, "1.5.0");

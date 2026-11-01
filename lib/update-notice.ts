@@ -1,7 +1,6 @@
 import { readFile, mkdir, writeFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { latestPackageVersion, latestVersion } from "../bin/update.js";
 import { compareVersions, runtimeDirectory, validVersion } from "../bin/runtime.js";
 import { AGENT_PACKAGE, AGENT_VERSION } from "./package.js";
 
@@ -57,9 +56,12 @@ async function checkForUpdate(current: string, options: CheckOptions, agent: boo
     } catch { /* A missing or invalid cache needs a fresh check. */ }
     if (!version) {
       signal?.throwIfAborted();
-      version = await (options.latest ?? ((signal) => agent
-        ? latestPackageVersion(AGENT_PACKAGE, undefined, { signal, background: true })
-        : latestVersion(undefined, { signal, background: true })))(signal);
+      version = await (options.latest ?? (async (signal) => {
+        const { latestPackageVersion, latestVersion } = await import("../bin/update.js");
+        signal?.throwIfAborted();
+        return agent ? latestPackageVersion(AGENT_PACKAGE, undefined, { signal, background: true })
+          : latestVersion(undefined, { signal, background: true });
+      }))(signal);
       signal?.throwIfAborted();
       if (!validVersion(version)) return;
       const temporary = join(directory, `${cacheName}.${process.pid}.${randomUUID()}.tmp`);

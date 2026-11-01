@@ -52,6 +52,14 @@ Use lowercase letters, digits, and hyphens, up to 64 characters. The ID `memory`
 is reserved because `memory.md` would collide with the `MEMORY.md` index on
 Windows. Choose a descriptive topic such as `project-notes`.
 
+## A memory topic cannot be read
+
+A note edited outside Pi can become unreadable, for example when its metadata
+header is damaged or its details grow past 12 KB. The remaining notes keep
+working: the index lists the affected IDs instead of their summaries, and
+saves and deletes continue. Remove the note with `/memory delete TOPIC`, or
+replace it by saving the topic again.
+
 ## Project skill installation is blocked
 
 Project installation requires Pi's trust decision. Reopen Pi and approve the

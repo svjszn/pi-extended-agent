@@ -3,7 +3,7 @@ import test from "node:test";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import permissions from "../dist/extensions/permissions.js";
-import { permissionDecision, readPermissionMode, PERMISSIONS_ENTRY } from "../dist/lib/permissions.js";
+import { permissionDecision, permissionRequest, readPermissionMode, PERMISSIONS_ENTRY } from "../dist/lib/permissions.js";
 import { createPermissionApprovalScreen } from "../dist/ui/permissions-screen.js";
 import { createUiTheme } from "../dist/ui/theme.js";
 import { createFooter } from "../dist/ui/chrome.js";
@@ -103,6 +103,24 @@ test("session shutdown cancels a pending TUI approval without letting the tool e
   assert.equal((await task).block, true);
 });
 
+test("cancellation during lazy approval loading never opens a stale dialog", async () => {
+  for (const cancel of ["shutdown", "mode", "tool"]) {
+    const f = fixture(); await f.set("ask"); f.ctx.mode = "tui";
+    const controller = new AbortController(); f.ctx.signal = controller.signal;
+    let opened = 0;
+    f.ctx.ui.custom = async () => { opened++; return true; };
+    const task = f.call("write");
+    // approve() begins in the queue's first microtask; cancel while imports await.
+    queueMicrotask(() => {
+      if (cancel === "shutdown") f.handlers.get("session_shutdown")();
+      else if (cancel === "mode") void f.set("read-only");
+      else controller.abort();
+    });
+    assert.equal((await task).block, true);
+    assert.equal(opened, 0, cancel);
+  }
+});
+
 test("permissions selector keeps changes pending until Enter and uses the shared screen layout", async () => {
   for (const cancel of [false, true]) {
     const f = fixture(); f.ctx.mode = "tui"; f.ctx.hasUI = true;
@@ -138,6 +156,24 @@ test("approval screen defaults to denial, scrolls full input, and requires an ex
     if (allow) panel.handleInput("\x1b[C");
     panel.handleInput("\r"); assert.equal(result, allow);
   }
+});
+
+test("approval text bounds a large tool input, keeps its fields visible, and states every truncation", () => {
+  const long = "a".repeat(5_000);
+  const text = permissionRequest("write", { path: "src/app.ts", content: long, nested: { note: long } }, "/work").join("\n");
+  assert.match(text, /Tool: write/);
+  assert.match(text, /Working directory: \/work/);
+  assert.match(text, /"path": "src\/app\.ts"/);
+  assert.match(text, /"nested": \{/);
+  assert.ok(!text.includes("a".repeat(601)), "long values must be shortened");
+  assert.match(text, /… \(5000 characters in total\)/);
+  assert.ok(text.length < 4_300, `approval text stayed ${text.length} characters`);
+  // Many medium fields hit the overall cap instead of the per-value one.
+  const bulk = permissionRequest("write", Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`field${i}`, "b".repeat(500)])), "/work").join("\n");
+  assert.ok(bulk.length < 4_300, `bulk approval text stayed ${bulk.length} characters`);
+  assert.match(bulk, /… input truncated for display$/);
+  // A small input is still shown exactly as the tool receives it.
+  assert.match(permissionRequest("bash", { command: "ls -la" }, "/work").join("\n"), /"command": "ls -la"/);
 });
 
 test("footer reflects the permission mode and keeps context aligned", () => {

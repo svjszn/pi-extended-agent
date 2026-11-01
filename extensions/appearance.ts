@@ -4,9 +4,6 @@ import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithA
 import { ACCENT_COLORS, AppearanceStore, getAppearance, setAppearance } from "../lib/appearance.js";
 import type { Appearance } from "../lib/appearance.js";
 import { nativeAppearanceTheme } from "../ui/appearance.js";
-import { createAppearanceScreen } from "../ui/appearance-screen.js";
-import { createUiTheme } from "../ui/theme.js";
-import { createHeader } from "../ui/chrome.js";
 
 export default function appearanceCommands(pi: ExtensionAPI, store = new AppearanceStore(getAgentDir())) {
   const notify = (ctx: ExtensionContext, message: string, type: "info" | "error" = "info") => {
@@ -38,9 +35,12 @@ export default function appearanceCommands(pi: ExtensionAPI, store = new Appeara
         const field = command === "theme" ? "mode" : "color";
         let value = args.trim().toLowerCase();
         if (!value && ctx.mode === "tui") {
+          const [{ createAppearanceScreen }, { createUiTheme }, { createHeader }] = await Promise.all([
+            import("../ui/appearance-screen.js"), import("../ui/theme.js"), import("../ui/chrome.js"),
+          ]);
           await ctx.ui.custom((tui, _nativeTheme, _keys, done) => {
             const theme = createUiTheme(), measure = { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-            const header = createHeader({ mode: "regular" }, theme, measure, {
+            const header = createHeader({ mode: "regular" }, measure, {
               version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
             });
             const footer = tui.children.at(-1);

@@ -51,7 +51,7 @@ export function installModelInterface(api: ModelInterfaceApi, measure: Measure, 
     void this.createExtensionUIContext().custom((tui, _theme, _keys, done) => {
       finish = () => done(undefined);
       const theme = createUiTheme();
-      const header = createHeader({ mode: "regular" }, theme, measure, {
+      const header = createHeader({ mode: "regular" }, measure, {
         version, getModel: () => this.session.model, getThinkingLevel: () => this.session.thinkingLevel,
         getCwd: () => this.sessionManager.getCwd(),
       });

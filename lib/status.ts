@@ -12,6 +12,7 @@ type NamespacedTool = ToolInfo & { namespace?: { name: string; aliases?: readonl
 export interface StatusReport {
   version: string;
   sessionId: string;
+  sessionName: string;
   login: string;
   model: string;
   tools: string[];
@@ -62,7 +63,7 @@ export async function readStatus(ctx: ExtensionContext, pi: StatusPi, { version,
     server.tools++;
     servers.set(name, server);
   }
-  return { version, sessionId: ctx.sessionManager.getSessionId(), login,
+  return { version, sessionId: ctx.sessionManager.getSessionId(), sessionName: ctx.sessionManager.getSessionName() || "Not set", login,
     model: model ? model.id : "No model selected",
     tools: [...new Set(pi.getActiveTools())], mcp: [...servers.values()].sort((a, b) => a.name.localeCompare(b.name)),
     mcpConfigKnown: configuration !== undefined, mcpConfigError,

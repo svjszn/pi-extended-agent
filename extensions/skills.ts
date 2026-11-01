@@ -1,10 +1,6 @@
 import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Input, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { installedSkills, installSkill, previewInstalledSkill, previewSkill, searchSkills, skillText } from "../lib/skills.js";
-import { createSkillsScreen } from "../ui/skills-screen.js";
-import { createHeader } from "../ui/chrome.js";
-import { createUiTheme } from "../ui/theme.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../lib/errors.js";
 
@@ -12,6 +8,7 @@ export default function skillsCommand(pi: ExtensionAPI) {
   pi.registerCommand("skills", {
     description: "Browse installed skills, search skills.sh, and install a skill",
     handler: async (args, ctx) => {
+      const { installedSkills, installSkill, previewInstalledSkill, previewSkill, searchSkills, skillText } = await import("../lib/skills.js");
       const query = args.trim().slice(0, 200);
       if (ctx.mode !== "tui") {
         try {
@@ -21,11 +18,14 @@ export default function skillsCommand(pi: ExtensionAPI) {
         } catch (error) { if (ctx.hasUI) ctx.ui.notify(errorMessage(error), "error"); else console.error(errorMessage(error)); }
         return;
       }
+      const [{ createSkillsScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
+        import("../ui/skills-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
+      ]);
       const agentDir = getAgentDir();
       const reload = await ctx.ui.custom((tui, _theme, _keys, done) => {
         const theme = createUiTheme();
         const measure = { CURSOR_MARKER, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-        const header = createHeader({ mode: "regular" }, theme, measure, {
+        const header = createHeader({ mode: "regular" }, measure, {
           version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
         });
         const footer = tui.children.at(-1);

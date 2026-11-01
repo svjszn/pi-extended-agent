@@ -1,3 +1,4 @@
+import { Spacer } from "@earendil-works/pi-tui";
 import { createUiTheme } from "./theme.js";
 import type { TreeComponent } from "./types.js";
 import { isActivity, styleToolCall } from "../bin/tool-interface.js";
@@ -28,6 +29,16 @@ export function createChatStyle(repaint: () => void = () => {}) {
   const messages = new Map<NativeMessage, number>();
   const styled = new WeakMap<UserContent, Readonly<Appearance>>();
   const activities = new Map<TreeComponent, () => void>();
+  const gaps = new Map<NativeMessage, { before: Spacer; after: Spacer }>();
+  function removeGaps(message: NativeMessage) {
+    const gap = gaps.get(message);
+    if (!gap) return;
+    for (const spacer of [gap.before, gap.after]) {
+      const index = message.children.indexOf(spacer);
+      if (index !== -1) message.children.splice(index, 1);
+    }
+    gaps.delete(message);
+  }
   function styleUserContent(component: UserContent) {
     const appearance = getAppearance();
     if (styled.get(component) === appearance) return;
@@ -55,9 +66,9 @@ export function createChatStyle(repaint: () => void = () => {}) {
         if (!current.has(component)) { restore(); activities.delete(component); }
       }
       for (const message of messages.keys()) {
-        if (!current.has(message)) messages.delete(message);
+        if (!current.has(message)) { removeGaps(message); messages.delete(message); }
       }
-      for (const message of container.children) {
+      for (const [index, message] of container.children.entries()) {
         if (isActivity(message)) {
           if (!activities.has(message)) activities.set(message, styleToolCall(message, repaint));
           continue;
@@ -67,12 +78,19 @@ export function createChatStyle(repaint: () => void = () => {}) {
         if (!messages.has(message)) messages.set(message, message.outputPad);
         if (message.outputPad !== padding) message.setOutputPad(padding);
         if (name === "UserMessageComponent") {
+          let gap = gaps.get(message);
+          if (!gap) { gap = { before: new Spacer(0), after: new Spacer(1) }; gaps.set(message, gap); }
+          gap.before.setLines(index > 0 && isActivity(container.children[index - 1]) ? 1 : 0);
+          // Native Markdown owns the card's colored padding. Keep the separating
+          // row outside it, using real children so mouse layout and zones agree.
+          if (!message.children.includes(gap.before)) message.children.unshift(gap.before);
+          if (!message.children.includes(gap.after)) message.children.push(gap.after);
           for (const child of message.children) styleUserContent(child);
         }
       }
     },
     dispose() {
-      for (const [message, padding] of messages) message.setOutputPad(padding);
+      for (const [message, padding] of messages) { removeGaps(message); message.setOutputPad(padding); }
       messages.clear();
       for (const restore of activities.values()) restore();
       activities.clear();

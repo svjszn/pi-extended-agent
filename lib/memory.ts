@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readdirSync, rmdirSync } from "node:fs";
 import { boundedText, StateFiles } from "./project-state.js";
+import { errorMessage } from "./errors.js";
 
 export interface MemoryNote { id: string; title: string; summary: string; content: string; updatedAt: string }
+export interface MemoryEntries { notes: MemoryNote[]; unreadable: string[] }
 const MAX_NOTES = 32;
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export class MemoryStore {
@@ -14,24 +16,40 @@ export class MemoryStore {
     if (!ID.test(id)) throw new Error("Use a memory id with lowercase letters, digits, and hyphens (up to 64 characters).");
     return `memory/${id}.md`;
   }
+  /** Report a damaged file as this note's own failure, not as an unrelated read or parse error. */
+  private damaged<T>(id: string, load: () => T): T {
+    try { return load(); }
+    catch (error) { throw new Error(`Memory ${id} could not be read: ${errorMessage(error)} Remove it with /memory delete ${id}.`); }
+  }
   read(id: string): MemoryNote {
-    const text = this.files.read(this.name(id), 18_000);
+    const name = this.name(id);
+    const text = this.damaged(id, () => this.files.read(name, 18_000));
     if (!text) throw new Error(`Memory not found: ${id}`);
-    const first = text.indexOf("\n");
-    const metadata = JSON.parse(text.slice(0, first).replace(/^<!-- pi-memory /, "").replace(/ -->$/, ""));
-    return { id, title: boundedText(metadata.title, "Title", 100), summary: boundedText(metadata.summary, "Summary", 160),
-      updatedAt: String(metadata.updatedAt), content: boundedText(text.slice(first + 1), "Memory", 12_000) };
+    return this.damaged(id, () => {
+      const first = text.indexOf("\n");
+      const metadata = JSON.parse(text.slice(0, first).replace(/^<!-- pi-memory /, "").replace(/ -->$/, ""));
+      return { id, title: boundedText(metadata.title, "Title", 100), summary: boundedText(metadata.summary, "Summary", 160),
+        updatedAt: String(metadata.updatedAt), content: boundedText(text.slice(first + 1), "Memory", 12_000) };
+    });
   }
-  list(): MemoryNote[] {
+  /** One damaged note must not hide the others, break the index, or block saves and deletes. */
+  entries(): MemoryEntries {
     const folder = this.files.path("memory");
-    if (!existsSync(folder)) return [];
-    return readdirSync(folder).filter((file) => ID.test(file.replace(/\.md$/, "")) && file.endsWith(".md") && file !== "MEMORY.md")
-      .map((file) => this.read(file.slice(0, -3))).sort((a, b) => a.id.localeCompare(b.id));
+    if (!existsSync(folder)) return { notes: [], unreadable: [] };
+    const ids = readdirSync(folder).filter((file) => file.endsWith(".md")).map((file) => file.slice(0, -3))
+      .filter((id) => ID.test(id) && !/^memory$/i.test(id)).sort((a, b) => a.localeCompare(b));
+    const notes: MemoryNote[] = [], unreadable: string[] = [];
+    for (const id of ids) {
+      try { notes.push(this.read(id)); } catch { unreadable.push(id); }
+    }
+    return { notes, unreadable };
   }
+  list(): MemoryNote[] { return this.entries().notes; }
   index() {
-    const notes = this.list();
+    const { notes, unreadable } = this.entries();
     if (notes.length > MAX_NOTES) throw new Error(`Keep at most ${MAX_NOTES} memory notes.`);
-    return "# Project memory\n\n" + (notes.length ? notes.map((n) => `- ${n.id}: ${n.summary || n.title}`).join("\n") : "No saved memories.") + "\n";
+    return "# Project memory\n\n" + (notes.length ? notes.map((n) => `- ${n.id}: ${n.summary || n.title}`).join("\n") : "No saved memories.")
+      + (unreadable.length ? `\n\nUnreadable notes, excluded from this index: ${unreadable.join(", ")}.` : "") + "\n";
   }
   private mutate(action: () => void) {
     const lock = this.files.path("memory/.lock");
@@ -50,7 +68,9 @@ export class MemoryStore {
     if (!note.title || !note.summary || !note.content) throw new Error("Title, summary, and content are required.");
     if (containsSecret([note.title, note.summary, note.content].join("\n"))) throw new Error("Memory appears to contain credentials. Remove secrets before saving.");
     this.mutate(() => {
-      if (!this.files.read(name) && this.list().length >= MAX_NOTES) throw new Error(`Memory limit reached (${MAX_NOTES}). Update or delete an existing note.`);
+      // Count stored files, damaged ones included, so the limit cannot be exceeded silently.
+      const { notes, unreadable } = this.entries();
+      if (!existsSync(this.files.path(name)) && notes.length + unreadable.length >= MAX_NOTES) throw new Error(`Memory limit reached (${MAX_NOTES}). Update or delete an existing note.`);
       const { content, ...metadata } = note;
       this.files.write(name, `<!-- pi-memory ${JSON.stringify(metadata)} -->\n${content}\n`);
     });

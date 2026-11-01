@@ -1,12 +1,11 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, openSync, closeSync, unlinkSync, writeFileSync, readFileSync, realpathSync, rmdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, closeSync, unlinkSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, delimiter } from "node:path";
 import {
   PI_PACKAGE, validVersion, runtimeDirectory, bundledRuntime, cachedRuntime,
   cachedVersions, compareVersions, readRuntimeState, releaseDirectory, writeRuntimeState,
 } from "./runtime.js";
-import { verifyRuntime } from "./verify-runtime.js";
 import type { Runtime } from "./runtime.js";
 import type { SpawnOptions } from "node:child_process";
 import { errorMessage, hasErrorCode } from "../lib/errors.js";
@@ -132,8 +131,8 @@ export const captureCommand: CommandRunner = async (executable, args, options) =
     return { stdout: readFileSync(output, "utf8") };
   } finally {
     for (const handle of handles) closeSync(handle);
-    for (const file of [output, errors]) if (existsSync(file)) unlinkSync(file);
-    rmdirSync(directory);
+    // Cleanup of our own temporary directory must never replace the command's error.
+    try { rmSync(directory, { recursive: true, force: true }); } catch { /* Left for the operating system to reclaim. */ }
   }
 }
 
@@ -146,6 +145,9 @@ export async function latestPackageVersion(packageName: string, run: CommandRunn
       `--fetch-retries=${options.background ? 0 : 1}`, "--fetch-retry-mintimeout=1000", "--fetch-retry-maxtimeout=2000",
       `--fetch-timeout=${options.background ? 5000 : 30000}`], {
       timeout: options.background ? 6000 : 75_000, windowsHide: true, signal: options.signal,
+      // npm sets process.title. A hidden, separate Windows console keeps its
+      // background registry checks from renaming the user's active Pi tab.
+      detached: options.background === true && process.platform === "win32",
     }));
   } catch (error) {
     const failure = error as CommandError;
@@ -164,7 +166,10 @@ export async function updateEngine(packageRoot: string, options: UpdateOptions =
   const directory = services.directory || runtimeDirectory();
   const log = services.log || console.log;
   const install = services.install || installEngine;
-  const verify = services.verify || verifyRuntime;
+  const verify = services.verify || (async (runtime: Runtime, root: string) => {
+    const { verifyRuntime } = await import("./verify-runtime.js");
+    await verifyRuntime(runtime, root);
+  });
   const getLatest = services.latest || latestVersion;
   mkdirSync(directory, { recursive: true });
   const lock = join(directory, "update.lock");

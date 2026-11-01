@@ -4,9 +4,6 @@ import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithA
 import { PERMISSION_MODES, PERMISSION_LABELS, PERMISSION_DESCRIPTIONS, PERMISSIONS_ENTRY, PERMISSIONS_CHANGED,
   isPermissionMode, readPermissionMode, permissionDecision, permissionRequest } from "../lib/permissions.js";
 import type { PermissionMode } from "../lib/permissions.js";
-import { createPermissionsScreen, createPermissionApprovalScreen } from "../ui/permissions-screen.js";
-import { createHeader } from "../ui/chrome.js";
-import { createUiTheme } from "../ui/theme.js";
 import { isWorkspaceBookkeeping } from "../lib/workspace-tools.js";
 import { PLAN_ENTRY, isPlanning, canPlanRead } from "../lib/plan.js";
 import type { Plan } from "../lib/plan.js";
@@ -33,10 +30,15 @@ export default function permissions(pi: ExtensionAPI) {
     if (!ctx.hasUI || signal.aborted) return false;
     const lines = permissionRequest(name, input, ctx.cwd);
     if (ctx.mode !== "tui") return Boolean(await ctx.ui.confirm(`Allow ${name} once?`, lines.join("\n"), { signal }));
+    const [{ createPermissionApprovalScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
+      import("../ui/permissions-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
+    ]);
+    // Cancellation or a mode change during module loading must not open a stale approval.
+    if (signal.aborted) return false;
     return Boolean(await ctx.ui.custom<boolean>((tui, _theme, _keys, done) => {
       const theme = createUiTheme();
       const measure = { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-      const header = createHeader({ mode: "regular" }, theme, measure, {
+      const header = createHeader({ mode: "regular" }, measure, {
         version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
       });
       const footer = tui.children.at(-1);
@@ -91,11 +93,14 @@ export default function permissions(pi: ExtensionAPI) {
       if (ctx.mode !== "tui") {
         notify(`Permissions: ${PERMISSION_LABELS[mode]}\n${PERMISSION_DESCRIPTIONS[mode]}\nAvailable: ${PERMISSION_MODES.join(", ")}`); return;
       }
+      const [{ createPermissionsScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
+        import("../ui/permissions-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
+      ]);
       let selected: PermissionMode | undefined;
       await ctx.ui.custom((tui, _theme, _keys, done) => {
         const theme = createUiTheme();
         const measure = { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-        const header = createHeader({ mode: "regular" }, theme, measure, {
+        const header = createHeader({ mode: "regular" }, measure, {
           version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
         });
         const footer = tui.children.at(-1);

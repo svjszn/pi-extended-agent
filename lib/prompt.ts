@@ -8,7 +8,8 @@ export function isPromptScope(value: string): value is PromptScope { return PROM
 export function sessionPrompt(entries: readonly { type: string; customType?: string; data?: unknown }[]) {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (entry.type === "custom" && entry.customType === PROMPT_ENTRY) return boundedText((entry.data as { text: unknown }).text, "Session prompt", 12_000);
+    // A session entry without data must report invalid text, not fail on a missing property.
+    if (entry.type === "custom" && entry.customType === PROMPT_ENTRY) return boundedText((entry.data as { text?: unknown } | undefined)?.text, "Session prompt", 12_000);
   }
   return "";
 }

@@ -32,6 +32,16 @@ try {
   const required = ["config", "model", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"];
   const commands = session._extensionRunner.getRegisteredCommands().map((command) => command.name);
   for (const name of required.filter((name) => name !== "model")) assert.ok(commands.includes(name), `Missing /${name}`);
+  assert.equal(commands.includes("perf"), false, "Installed package registered a development command");
+  assert.equal(session._extensionRunner.getCommand("perf"), undefined);
+  // Exercise the production CLI loader as well as the unbundled SDK path.
+  const bundled = await import(pathToFileURL(join(runtime.packageDir, "dist/bundle/index.js")));
+  const cliLoader = new bundled.DefaultResourceLoader({ cwd, agentDir, settingsManager: bundled.SettingsManager.inMemory(),
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, additionalExtensionPaths: [installed] });
+  await cliLoader.reload();
+  assert.deepEqual(cliLoader.getExtensions().errors, []);
+  for (const extension of cliLoader.getExtensions().extensions) assert.equal(extension.commands.has("perf"), false);
+  assert.equal(cliLoader.getExtensions().extensions.length, JSON.parse(readFileSync(join(installed, "package.json"), "utf8")).pi.extensions.length);
   session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "release-smoke", name: "codemode", arguments: {} }],
     api: "test", provider: "test", model: "test", stopReason: "toolUse", timestamp: Date.now(),
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 } });

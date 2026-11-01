@@ -34,7 +34,7 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       if (!enabled || !this.focused) { this.stopAnimation(); return; }
       if (this.animation || this.disposed) return;
       this.animation = setInterval(() => {
-        if (!this.focused || !animatedEffort(effort?.getLevel() ?? "") || visibleUpdateLabel()) { this.stopAnimation(); return; }
+        if (!this.focused || ctx.isIdle() || !animatedEffort(effort?.getLevel() ?? "") || visibleUpdateLabel()) { this.stopAnimation(); return; }
         this.tui.requestRender();
       }, 80);
       this.animation.unref?.();
@@ -67,7 +67,8 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       const statusWidth = Math.max(0, inner - (label ? visibleWidth(label) + 2 : 0));
       const status = statusWidth ? truncateToWidth(this.statusIndicator?.renderInBorder(statusWidth) ?? "", statusWidth, "") : "";
       this.statusRows = effort || status || label ? 1 : 0;
-      this.animate(!update && !!label && animatedEffort(level));
+      const animateLabel = !this.disposed && this.focused && !update && !!label && animatedEffort(level) && !ctx.isIdle();
+      this.animate(animateLabel);
       this.borderColor = (value) => faintInputRule(theme.fg("inputBorder", value));
       const contentPadding = Math.min(2, Math.max(0, Math.floor((width - 4) / 2)));
       super.setPaddingX(contentPadding);
@@ -81,7 +82,10 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       if (this.statusRows) {
         const role = update || level === "low" ? "effortLow" : level === "medium" ? "effortMedium"
           : level === "high" ? "effortHigh" : level === "xhigh" ? "effortXhigh" : "primary";
-        let right = !update && animatedEffort(level) ? effortGlow(level, label, now() / 1000) : theme.fg(role, label);
+        // A paused shimmer is not the base color: use the exact high/xhigh
+        // palette for the whole idle label, retaining a static rainbow for max.
+        let right = !update && (animateLabel || level === "max")
+          ? effortGlow(level, label, animateLabel ? now() / 1000 : 0) : theme.fg(role, label);
         const version = update ? visibleUpdateVersion() : undefined;
         const versionStart = version ? label.indexOf(version) : -1;
         if (version && versionStart >= 0) {

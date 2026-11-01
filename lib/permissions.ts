@@ -35,8 +35,17 @@ export function permissionDecision(mode: PermissionMode, name: string, tools: re
 export function permissionFooter(mode: PermissionMode): string {
   return mode === "full" ? "auto mode" : mode === "ask" ? "ask mode" : "read only";
 }
+// A large tool input must stay readable and cheap to repaint on every frame.
+const MAX_REQUEST_VALUE = 600;
+const MAX_REQUEST_TEXT = 4_000;
 export function permissionRequest(name: string, input: unknown, cwd: string): string[] {
   const clean = (value: string) => value.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
-  return [`Tool: ${clean(name)}`, `Working directory: ${clean(cwd)}`, "", ...clean(JSON.stringify(input, null, 2) ?? "{}").split("\n")];
+  // Shorten long values individually, so the request keeps its structure and
+  // every field stays visible. Truncation is always stated, never silent.
+  const shorten = (_key: string, value: unknown) => typeof value === "string" && value.length > MAX_REQUEST_VALUE
+    ? `${value.slice(0, MAX_REQUEST_VALUE)}… (${value.length} characters in total)` : value;
+  let text = clean(JSON.stringify(input, shorten, 2) ?? "{}");
+  if (text.length > MAX_REQUEST_TEXT) text = `${text.slice(0, MAX_REQUEST_TEXT)}\n… input truncated for display`;
+  return [`Tool: ${clean(name)}`, `Working directory: ${clean(cwd)}`, "", ...text.split("\n")];
 }

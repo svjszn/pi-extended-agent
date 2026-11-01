@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { readdirSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { createRequire, findPackageJSON } from "node:module";
 import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createFooter, createHeader } from "../ui/chrome.js";
 import { createEscapeExitEditor } from "../ui/escape-exit.js";
 import { createCommandPanel } from "../ui/command-panel.js";
+import { createAuthSelectorScreen } from "../ui/auth-screen.js";
 import { createUiTheme } from "../ui/theme.js";
 import { createChatStyle } from "../ui/chat.js";
 import type { nativeAppearanceTheme as NativeAppearanceTheme } from "../ui/appearance.js";
@@ -33,7 +34,16 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   const require = createRequire(entry);
   const api = await import(entry.href) as PiApi;
   installCommandPolicy(api as unknown as CommandRuntimeApi);
-  await verifyCommandPolicy(await prepareRuntimeCommands(runtime));
+  const commandApi = await prepareRuntimeCommands(runtime);
+  await verifyCommandPolicy(commandApi);
+  // Native JS extension imports use this executable's bundled public API, not
+  // the wrapper's separately installed SDK. Check deferred command readers too.
+  const bundledApi = commandApi as unknown as Record<string, unknown>;
+  for (const name of ["getAgentDir", "getPackageDir", "SettingsManager", "CustomEditor", "buildSessionContext",
+    "estimateTokens", "formatSkillsForPrompt", "getLastAssistantUsage", "parseFrontmatter"]) {
+    assert.equal(typeof bundledApi[name], "function", `Missing bundled extension API: ${name}`);
+  }
+  assert.equal(bundledApi.VERSION, runtime.version, "Bundled extension API version mismatch");
   assert.equal(api.VERSION, runtime.version, "Runtime API version mismatch");
   assert.equal(typeof api.CustomEditor, "function", "Missing CustomEditor API");
   const tuiEntry = pathToFileURL(require.resolve("@earendil-works/pi-tui"));
@@ -50,13 +60,38 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     initTheme(name: string, watch: boolean): void; getEditorTheme(): EditorTheme;
   };
   initTheme("dark", false);
+  // Probe the native auth selector shape without reading credentials or starting a login.
+  const authHost = Object.create(commandApi.InteractiveMode.prototype) as {
+    getLoginProviderOptions(type?: string): unknown[];
+    showLoginProviderSelector(type?: string): void;
+    showSelector(create: (done: () => void) => { component: import("../ui/auth-screen.js").AuthSelector }): void;
+    ui: { requestRender(): void };
+  };
+  authHost.getLoginProviderOptions = () => [{ id: "compat", name: "Compatibility provider", authType: "api_key" }];
+  authHost.ui = { requestRender() {} };
+  let authSelector: import("../ui/auth-screen.js").AuthSelector | undefined;
+  authHost.showSelector = (create) => { authSelector = create(() => {}).component; };
+  authHost.showLoginProviderSelector("api_key");
+  if (!authSelector || !Array.isArray((authSelector as import("../ui/auth-screen.js").AuthSelector).filteredProviders)) {
+    throw new Error("Pi auth provider selector has changed.");
+  }
+  const authTui = { children: [], terminal: { rows: 24, columns: 80 }, requestRender() {} };
+  const authScreen = createAuthSelectorScreen({ selector: authSelector, tui: authTui, theme: createUiTheme(), measure: tuiApi, done() {} });
+  try {
+    await authScreen.ready;
+    if (!authScreen.render(80).some((line) => line.includes("Compatibility provider"))) throw new Error("Pi auth selector no longer renders providers.");
+  } finally { authScreen.dispose(); }
   assert.equal(typeof api.ToolExecutionComponent, "function", "Missing native tool renderer");
   const tool = new api.ToolExecutionComponent("read", "compat-tool", { path: "example.ts" }, { showImages: false }, undefined,
     { requestRender() {} } as TUI, packageRoot);
   tool.updateResult({ content: [{ type: "text", text: "Runtime tool details" }], isError: false });
   const toolStyle = createChatStyle();
+  const toolPrompt = new UserMessageComponent("Inspect the runtime");
   try {
-    toolStyle.apply({ children: [tool] }, 80);
+    toolStyle.apply({ children: [toolPrompt, tool] }, 80);
+    const promptLines = toolPrompt.render(80);
+    assert.equal(stripTerminalSequences(promptLines.at(-1)!), "", "Runtime breaks the gap after user messages");
+    assert.ok(!promptLines.at(-1)!.includes("\x1b[48;"), "Runtime colors the message separator");
     assert.equal(tool.render(80).length, 1, "Runtime breaks compact tool calls");
     assert.ok(stripTerminalSequences(tool.render(80)[0]).startsWith("  ▸ read"), "Runtime breaks tool call inset");
     tool.handleMouse({ type: "click", button: "left", x: 3, y: 0, width: 80, height: 1,
@@ -77,6 +112,9 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     chat.addChild(user);
     chat.addChild(assistant);
     document.addChild(chat);
+    const nativeChatRender = chat.render;
+    let chatRenders = 0;
+    chat.render = (columns) => { chatRenders++; return nativeChatRender.call(chat, columns); };
     const tui: HeaderTui & PanelTui = { mode: "fullscreen", children: [], terminal: { rows: height, columns: width }, requestRender() {} };
     const footer = createFooter({ cwd: packageRoot }, tui, theme,
       { onBranchChange: () => () => {}, getGitBranch: () => "main" }, tuiApi);
@@ -84,13 +122,15 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     const editor = component(["─".repeat(width), "> ", "─".repeat(width)]), widgetsBelow = component([]);
     tui.children = [document, pendingMessages, status, widgetsAbove, editor, widgetsBelow, footer];
     headerContainer.addChild(new Spacer(1));
-    headerContainer.addChild(createHeader(tui, theme, tuiApi, {
+    const header = createHeader(tui, tuiApi, {
       version: runtime.version, getModel: () => ({ id: "gpt-6.1-sol" }), getThinkingLevel: () => "medium", getCwd: () => packageRoot,
-    }));
+    });
+    headerContainer.addChild(header);
     headerContainer.addChild(new Spacer(1));
     const viewport = createChatViewport({ document, pendingMessages, status, widgetsAbove, editor, widgetsBelow, footer, scrollbar: "hidden" });
     const lines = renderLayoutFrame(viewport.root, width, height, () => {}).lines.map(stripTerminalSequences);
     assert.equal(lines.length, height);
+    assert.equal(chatRenders, 1, "Runtime renders the transcript twice while measuring the header");
     assert.ok(lines.every((line) => visibleWidth(line) <= width), "Runtime layout overflows");
     assert.ok(lines.some((line) => line.trim() === ">"), "Runtime hides input");
     assert.ok(lines.some((line) => line.includes("Runtime check")), "Runtime hides conversation");
@@ -126,7 +166,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     assert.equal(exited, true, "Runtime breaks Escape exit");
     // Custom commands mount a standalone header, without the chat's TUI tree.
     const palette = createUiTheme();
-    const commandHeader = createHeader({ mode: "regular" }, palette, tuiApi, {
+    const commandHeader = createHeader({ mode: "regular" }, tuiApi, {
       version: runtime.version, getModel: () => ({ id: "gpt-6.1-sol" }), getThinkingLevel: () => "medium",
     });
     const panel = createCommandPanel({ title: "Activity", tui, theme: palette, measure: tuiApi, done() {},
@@ -141,6 +181,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
       panel.dispose();
       commandHeader.dispose();
     }
+    header.dispose();
     footer.dispose();
   }
 
@@ -180,6 +221,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     tools, { version: runtime.version, packageDir: runtime.packageDir, agentDir: join(packageRoot, ".local", "status-runtime-check") });
   assert.equal(status.version, runtime.version, "Runtime breaks session status");
   assert.equal(status.sessionId, memory.getSessionId(), "Runtime hides session ID");
+  assert.equal(status.sessionName, "Not set", "Runtime breaks session name lookup");
   if (existsSync(join(runtime.packageDir, "dist", "extensions", "mcp", "config.js"))) {
     assert.equal(status.mcpConfigKnown, true, "Runtime breaks MCP configuration metadata");
   }
@@ -187,10 +229,14 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   const fakePi: Pick<ExtensionAPI, "on" | "registerCommand" | "registerTool"> = {
     on() { return () => {}; }, registerCommand(name) { commands.add(name); }, registerTool(tool) { assert.ok(tool.parameters, `Missing schema for ${tool.name}`); },
   };
-  for (const file of readdirSync(join(packageRoot, "dist", "extensions")).filter((file) => file.endsWith(".js"))) {
-    const factory = await jiti.import(join(packageRoot, "dist", "extensions", file), { default: true }) as ExtensionFactory;
+  const extensionFiles: unknown = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).pi?.extensions;
+  assert.ok(Array.isArray(extensionFiles) && extensionFiles.length > 0, "Missing production extension allowlist");
+  for (const file of extensionFiles) {
+    assert.ok(typeof file === "string" && /^\.\/dist\/extensions\/[a-z0-9-]+\.js$/.test(file), "Invalid production extension path");
+    const factory = await jiti.import(join(packageRoot, file), { default: true }) as ExtensionFactory;
     await factory(fakePi as ExtensionAPI);
   }
+  assert.ok(!commands.has("perf"), "Development performance command must not ship");
   for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
     assert.ok(commands.has(name), `Runtime failed to register /${name}`);
   }

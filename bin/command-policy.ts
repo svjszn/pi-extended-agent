@@ -8,6 +8,8 @@ import type { ConfigPreferences, ConfigPreferencesUI } from "../lib/config-prefe
 import type { SettingsListTheme } from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
 import { installModelInterface } from "./model-interface.js";
+import { installAuthInterface } from "./auth-interface.js";
+import type { AuthInterfaceApi } from "./auth-interface.js";
 import type { ModelInterfaceApi } from "./model-interface.js";
 import type { Measure } from "../ui/types.js";
 
@@ -158,6 +160,7 @@ export async function prepareRuntimeCommands(runtime: Runtime) {
   const require = createRequire(pathToFileURL(runtime.entry));
   const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href) as Measure;
   installModelInterface(api as unknown as ModelInterfaceApi, measure, runtime.version);
+  installAuthInterface(api as unknown as AuthInterfaceApi, measure, runtime.version);
   return api;
 }
 

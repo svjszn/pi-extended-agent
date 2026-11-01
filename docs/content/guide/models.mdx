@@ -52,6 +52,11 @@ Use **Left/Right** or drag the slider, **Enter** to apply, and **Escape** to can
 
 In chat, **Shift+Left** and **Shift+Right** step through the available levels.
 The current level appears in the header. These changes apply to the session.
+The input-corner high/xhigh glow and max rainbow stay static while idle, and
+animate only during active work while the input is focused. Update notices,
+unfocused input, and shutdown pause the animation. This is visual behavior only:
+it never changes the model's reasoning level. The effort selector retains its
+animated preview.
 
 Use `/status` to inspect the model and login, or `/usage` for available account
 limits.

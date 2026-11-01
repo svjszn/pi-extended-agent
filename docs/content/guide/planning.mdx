@@ -40,6 +40,14 @@ tracks progress through the steps.
 Your current [permission mode](/guide/permissions) still applies. For example,
 Ask mode continues to request approval for changes and shell commands.
 
+Execution instructions keep work within the approved scope, reuse planning
+findings, and favor batching independent research. The agent must run the
+required repository and plan checks, then finish when the requirements are met.
+Passing checks should be repeated when code changes, new evidence warrants it,
+or the user requires it. A blocker that invalidates the scope needs a revised
+plan. These are model instructions; tool permissions and explicit approval
+remain enforced separately by the harness.
+
 ## Pause or Cancel
 
 **Shift+Tab** switches between normal mode and plan mode while idle. Leaving

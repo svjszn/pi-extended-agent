@@ -12,6 +12,7 @@ request; avoid adding features, dependencies, or refactors to unrelated areas.
 - `lib/` contains storage, provider readers, and other non-UI logic.
 - `ui/` contains terminal components and the existing Pi SVG marks.
 - `test/` tests the compiled JavaScript, including real Pi SDK integration.
+- `dev/` contains opt-in diagnostics, built into `.local/dev-dist/`, never shipped.
 - `docs/` is an independent Nextra site. Its dependencies must stay out of the CLI.
 - `scripts/release-check.mjs` validates the installed npm artifact in an isolated prefix.
 
@@ -22,8 +23,9 @@ disabled, run `npm run build` afterward. Edit TypeScript sources, never `dist/`
 or `node_modules/`. Build before restarting a linked `pi`.
 
 - `npm run check` checks strict TypeScript types.
-- `npm run build` compiles the CLI and extensions into `dist/`.
-- `npm test` builds and runs the complete suite.
+- `npm run build` clears `dist/`, compiles production code, and checks its extension allowlist.
+- `npm run build:dev` separately builds development diagnostics into `.local/dev-dist/`.
+- `npm test` builds both targets and runs the complete suite.
 - For a focused check after building:
   `node scripts/run-tests.mjs test/workspace.test.mjs`.
 - `npm run release:check` checks types, tests, packing, isolated installation,
@@ -71,8 +73,10 @@ The docs site is a static export published to GitHub Pages by
 assets, and search index when changing its configuration.
 
 Before npm publication, run `npm run release:check` and inspect the archive.
-Publish the validated `.tgz` artifact. Do not include `docs/`, fixtures, profiles,
-credentials, or build caches. Publishing, tagging, and pushing require a user
+Publish the validated `.tgz` artifact. Do not include `docs/`, `dev/`, diagnostics,
+fixtures, profiles, credentials, or build caches. Keep `pi.extensions` as explicit
+production files, not a directory or glob. Removed commands must be absent from
+both SDK and production CLI-bundle registration checks. Publishing, tagging, and pushing require a user
 request that authorizes those actions; do not infer a release from routine edits.
 
 ## Git and versioning

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureCommand } from "./capture-command.mjs";
+import { assertPackageFiles } from "./artifact-policy.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.env.npm_execpath;
@@ -29,11 +30,7 @@ assert.equal(manifest.license, lock.packages[""].license, "Package license metad
 const releases = join(root, ".local", "releases"); mkdirSync(releases, { recursive: true });
 const [packed] = JSON.parse(npmRun(["pack", "--ignore-scripts", "--json", "--pack-destination", releases], { capture: true }).stdout);
 const files = packed.files.map((file) => file.path);
-for (const name of ["bin/pi.mjs", "dist/bin/main.js", "dist/extensions/workspace.js", "dist/ui/workspace-screen.js", "README.md", "CHANGELOG.md", "LICENSE"]) {
-  assert.ok(files.includes(name), `Missing package file: ${name}`);
-}
-assert.ok(files.every((name) => !/(^|\/)(?:\.env(?:\..*)?|auth\.json|\.local|node_modules|test)(\/|$)/.test(name)), "Package includes local/private files.");
-assert.ok(files.every((name) => !/^(?:docs|profile|scripts|\.github)\//.test(name)), "Package includes development-only files.");
+assertPackageFiles(files, manifest);
 const archive = join(releases, packed.filename);
 const temp = mkdtempSync(join(root, ".local", "release-check-"));
 let passed = false;
@@ -63,6 +60,9 @@ try {
   assert.equal(JSON.parse(auth.stdout).status, "not_ready", "An empty profile unexpectedly has credentials.");
   console.log("Checking installed extensions, permissions, memory, plans, and session resume...");
   run(process.execPath, [join(root, "scripts", "package-smoke.mjs"), installed, temp], { cwd: project, env });
+  console.log("Opening installed command views cold and after reload, without network access...");
+  run(process.execPath, [join(root, "test", "command-loading.test.mjs"), "--probe", installed, project], { cwd: project, env });
+  run(process.execPath, [join(root, "test", "command-loading.test.mjs"), "--probe", installed, project, "fail"], { cwd: project, env });
   passed = true;
   console.log(`Release checks passed. Artifact: ${archive}`);
 } finally {

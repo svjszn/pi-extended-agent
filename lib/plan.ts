@@ -6,6 +6,7 @@ import { permissionDecision } from "./permissions.js";
 export const PLAN_CHANGED = "pi-extended:plan-changed";
 export const PLAN_ENTRY = "pi-extended-plan";
 export const PLAN_TOGGLE = "pi-extended:toggle-plan-mode";
+export const PLAN_EXECUTION_GUIDANCE = "Execute the user-approved plan under the current permissions. Treat its goal, steps, affected areas, and checks as the agreed scope. Start implementation after only the investigation needed for the next step; reuse the planning findings instead of restarting a general architecture review. Batch independent reads and searches when the available tools support it. Avoid unrelated features, refactors, and audits unless requested or new evidence makes them necessary. Run focused checks while implementing, then every required repository and plan check. Repeat passing checks when code changed, a failure or new evidence warrants it, or the user requires it. Once the requirements are met and required checks pass, finish with the result and validation; do not expand the task to keep improving it. If a real blocker invalidates the approved scope, explain it and request a revised plan. Use update_plan to track step statuses, keeping only one in progress. Never mark a step complete before verifying it or hide a failed or unavailable check.";
 export type StepStatus = "pending" | "in_progress" | "completed";
 export interface PlanStep { text: string; status: StepStatus }
 export interface Plan {

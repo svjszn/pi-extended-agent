@@ -2,10 +2,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { createEffortScreen } from "../ui/effort-screen.js";
 import type { EffortLevel } from "../ui/effort-screen.js";
-import { createHeader } from "../ui/chrome.js";
-import { createUiTheme } from "../ui/theme.js";
 
 export default function effortCommand(pi: ExtensionAPI) {
   let available: EffortLevel[] = [];
@@ -36,11 +33,14 @@ export default function effortCommand(pi: ExtensionAPI) {
         notify(`Effort: ${pi.getThinkingLevel()}\nAvailable: ${available.join(", ")}`);
         return;
       }
+      const [{ createEffortScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
+        import("../ui/effort-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
+      ]);
       let selected: EffortLevel | undefined;
       await ctx.ui.custom((tui, _theme, _keys, done) => {
         const theme = createUiTheme();
         const measure = { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-        const header = createHeader({ mode: "regular" }, theme, measure, {
+        const header = createHeader({ mode: "regular" }, measure, {
           version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
         });
         const footer = tui.children.at(-1);

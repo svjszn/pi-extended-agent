@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.0
+
+- Bring `/login` and `/logout` provider selection and sign-in dialogs into the shared borderless terminal layout while keeping Pi's authentication and credential handling.
+- Show the current session name set with `/name` immediately after Session ID in `/status`, or Not set for unnamed sessions.
+- Render paused high/xhigh corner labels in solid #B1B9F9/#AF87FF instead of freezing a per-letter shimmer at different shades.
+- Freeze the input-corner effort glow while idle; animate only during active work, preserving the selected reasoning level and stopping repaint timers on settlement, cancellation, blur, or disposal.
+- Separate user message cards from compact tool calls with an uncolored blank row.
+- Render the header from the shared appearance palette only, removing the unused native theme argument.
+- Bind this wrapper's compiled extension imports to the selected CLI's bundled API, avoiding duplicate SDK loading while preserving third-party resolution and tool provenance.
+- Load command screens, activity readers, skill services, and engine compatibility verification on demand; keep command registration, session hooks, and permission enforcement eager, and reject approvals cancelled while their view loads.
+- Keep updater and interface initialization out of the version-reporting path.
+- Reuse transcript rendering within each fullscreen document frame, avoiding a second history render for header spacing while preserving native mouse layout and fresh streaming/resize output.
+- Keep one damaged memory note from hiding the others: the index reports the unreadable topic IDs, saves and deletes keep working, and the note's own read error names the topic and how to remove it. Damaged files still count toward the 32-topic limit.
+- Bound the permission request shown for approval: long values are shortened individually and the whole input is capped, so a large write stays readable and cheap to repaint. Every truncation is stated.
+- Report an invalid session prompt addition as invalid text instead of failing on a missing property.
+- Keep a captured npm failure reportable when its temporary directory cannot be removed.
+- Keep background npm checks from renaming the Pi tab on Windows, restore the title after agent tools finish, and suppress Windows terminal/taskbar progress without changing terminal settings.
+- Clean build output before compilation, explicitly allowlist production extensions, and reject stale or development files in release artifacts.
+- Keep experimental diagnostics in a separate development-only build; published packages do not register diagnostic commands.
+- Clarify execution of approved plans: stay within scope, reuse planning findings, batch independent research, run required validation, and finish when the requirements and checks are satisfied.
+- Extend bounded batching and completion guidance to ordinary tasks while preserving validation, dependencies, permissions, and the user's effort choice.
+
 ## 1.1.0
 
 - Dark and light themes with `/theme`; `/color` previews neutral, yellow, green, blue, and purple accents for input borders, Pi logo, activity charts, and subtle message backgrounds. Appearance is saved in the Pi profile.

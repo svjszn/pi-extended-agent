@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { SettingsManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { parseUsage, parseClaudeUsage, fetchUsage } from "../dist/lib/usage.js";
 import { readActivity, activitySummary, dayKey } from "../dist/lib/activity.js";
 import { configSections } from "../dist/lib/config.js";
@@ -259,7 +259,7 @@ test("activity period keys update the screen and the close hint stays in the inp
 
 function statusFixture() {
   const ctx = { cwd: "/project", model: { provider: "openai-codex", id: "gpt-6.1-sol" },
-    sessionManager: { getSessionId: () => "session-123" }, isProjectTrusted: () => false,
+    sessionManager: { getSessionId: () => "session-123", getSessionName: () => "Status test" }, isProjectTrusted: () => false,
     modelRegistry: { getProviderDisplayName: () => "ChatGPT", getProviderAuthStatus: () => ({ configured: true, label: "secret-key" }),
       isUsingOAuth: () => true, getApiKeyAndHeaders: () => assert.fail("status must not resolve credentials") } };
   const pi = { getThinkingLevel: () => "medium", getActiveTools: () => ["read", "edit"], getAllTools: () => [], getMcpServers: () => [] };
@@ -272,11 +272,13 @@ test("status reports engine, session, login method, model, and tools without res
   const data = await readStatus(ctx, pi, options, { loadMcpConfig: async () => ({ servers: [] }) });
   assert.equal(data.version, "1.4.0");
   assert.equal(data.sessionId, "session-123");
+  assert.equal(data.sessionName, "Status test");
   assert.equal(data.login, "ChatGPT · OAuth configured");
   assert.equal(data.model, "gpt-6.1-sol");
   assert.deepEqual(data.tools, ["read", "edit"]);
   const output = statusLines(data, 76, createUiTheme({ color: false }), measure).join("\n");
-  for (const label of ["Version:", "Session ID:", "Login:", "Model:", "MCP Servers:", "Tools:"]) assert.ok(output.includes(label));
+  for (const label of ["Version:", "Session ID:", "Session name:", "Login:", "Model:", "MCP Servers:", "Tools:"]) assert.ok(output.includes(label));
+  assert.match(output, /Session ID:[^\n]*\nSession name:\s+Status test\nLogin:/);
   assert.doesNotMatch(output, /secret-key/);
   assert.match(output, /Login:[^\n]*\n\nModel:/);
   assert.doesNotMatch(output, /medium effort|openai-codex/);
@@ -284,6 +286,28 @@ test("status reports engine, session, login method, model, and tools without res
   assert.match((await readStatus(ctx, pi, options, { loadMcpConfig: async () => undefined })).login, /API credentials configured/);
   ctx.modelRegistry.getProviderAuthStatus = () => ({ configured: false });
   assert.match((await readStatus(ctx, pi, options, { loadMcpConfig: async () => undefined })).login, /not configured/);
+});
+
+test("status reads the current native session name after naming and renaming, with an unnamed fallback", async () => {
+  const { ctx, pi, options } = statusFixture();
+  ctx.sessionManager = SessionManager.inMemory(process.cwd());
+  const services = { loadMcpConfig: async () => undefined };
+  const unnamed = await readStatus(ctx, pi, options, services);
+  assert.equal(unnamed.sessionName, "Not set");
+  assert.match(statusLines(unnamed, 80, theme, measure).join("\n"), /Session name:\s+Not set/);
+  for (const name of ["Первый чат", "Renamed chat", "Long session name ".repeat(15).trim()]) {
+    ctx.sessionManager.appendSessionInfo(name);
+    const data = await readStatus(ctx, pi, options, services);
+    assert.equal(data.sessionName, name);
+    for (const width of [24, 40, 80]) {
+      const lines = statusLines(data, width, theme, measure);
+      assert.ok(lines.every((line) => measure.visibleWidth(line) <= width));
+      const id = lines.findIndex((line) => line.startsWith("Session ID:"));
+      const sessionName = lines.findIndex((line) => line.startsWith("Session name:"));
+      const login = lines.findIndex((line) => line.startsWith("Login:"));
+      assert.ok(id < sessionName && sessionName < login);
+    }
+  }
 });
 
 test("status combines MCP metadata and registered namespaces without claiming a live connection", async () => {

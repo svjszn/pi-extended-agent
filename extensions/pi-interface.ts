@@ -13,7 +13,7 @@ import type { Plan } from "../lib/plan.js";
 import { mountAppearanceTerminal } from "../ui/appearance.js";
 
 export default function piInterface(pi: ExtensionAPI) {
-  let activeTui: TUI | undefined, restoreTitle: (() => void) | undefined;
+  let activeTui: TUI | undefined, restoreTitle: ReturnType<typeof pinTerminalTitle> | undefined;
   let appearanceTerminal: ReturnType<typeof mountAppearanceTerminal> | undefined;
   let context: ContextSummary | undefined;
   let permissionMode: PermissionMode = "full", stopPermissions: (() => void) | undefined;
@@ -45,7 +45,7 @@ export default function piInterface(pi: ExtensionAPI) {
     planning = isPlanning((marker as { data?: Plan } | undefined)?.data);
     refreshContext(_event, ctx);
     const measure = { truncateToWidth };
-    ctx.ui.setHeader((tui, theme) => {
+    ctx.ui.setHeader((tui) => {
       if (activeTui !== tui) {
         restoreTitle?.();
         appearanceTerminal?.dispose();
@@ -53,7 +53,7 @@ export default function piInterface(pi: ExtensionAPI) {
         restoreTitle = pinTerminalTitle(tui.terminal);
       }
       activeTui = tui;
-      return createHeader(tui, theme, measure, {
+      return createHeader(tui, measure, {
         version: VERSION,
         getModel: () => ctx.model,
         getThinkingLevel: () => pi.getThinkingLevel(),
@@ -68,6 +68,10 @@ export default function piInterface(pi: ExtensionAPI) {
     refreshContext(event, ctx);
     if (ctx.mode === "tui") notifyAuth(ctx);
   });
+  // Shell children can change the shared Windows console title without calling
+  // our terminal object. Reassert it once they finish, not on every render.
+  pi.on("tool_execution_end", () => restoreTitle?.refresh());
+  pi.on("agent_settled", () => restoreTitle?.refresh());
   pi.on("message_end", refreshContext);
   pi.on("turn_end", refreshContext);
   pi.on("agent_end", refreshContext);

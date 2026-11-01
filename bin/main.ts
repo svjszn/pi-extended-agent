@@ -3,8 +3,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { planUpdate, updateEngine, updateHelp } from "./update.js";
 import { selectedRuntime } from "./runtime.js";
 import { errorMessage } from "../lib/errors.js";
-import { prepareRuntimeCommands } from "./command-policy.js";
-import { updateAgent } from "./self-update.js";
 import { AGENT_VERSION } from "../lib/package.js";
 
 let args = process.argv.slice(2);
@@ -23,6 +21,7 @@ try {
     process.exit(0);
   }
   if (update.type === "package") {
+    const { updateAgent } = await import("./self-update.js");
     await updateAgent(fileURLToPath(new URL("../../", import.meta.url)), update);
     process.exit(0);
   }
@@ -50,5 +49,8 @@ if (!managementCommands.has(args[0]) && !options.includes("--no-extensions") && 
 // Keep upstream configuration, auth, session handling, and agent loop.
 const runtime = selectedRuntime();
 process.env.PI_EXTENDED_PI_VERSION = runtime.version;
+const { prepareRuntimeCommands } = await import("./command-policy.js");
 await prepareRuntimeCommands(runtime);
+const { bindCompiledExtensionImports } = await import("./extension-runtime.js");
+bindCompiledExtensionImports(runtime);
 await import(pathToFileURL(runtime.cli).href);

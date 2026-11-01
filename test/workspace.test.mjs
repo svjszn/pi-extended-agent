@@ -114,6 +114,41 @@ test("memory rejects traversal, secrets, oversized notes and an unbounded index"
   assert.ok(Buffer.byteLength(memory.index()) < 8000);
 });
 
+test("a damaged note is reported without hiding other memories or blocking the index, saves and deletes", (t) => {
+  const files = new StateFiles(join(directory(t), "state")), memory = new MemoryStore(files);
+  memory.save(note);
+  memory.save({ ...note, id: "architecture", summary: "Modules stay independent" });
+  // Hand-edited notes: one with an unreadable header, one grown past its content limit.
+  files.write("memory/broken.md", "not a metadata header\nStill text.\n");
+  files.write("memory/huge.md", `<!-- pi-memory {"title":"Huge","summary":"Grew","updatedAt":""} -->\n${"x".repeat(13_000)}\n`);
+  const { notes, unreadable } = memory.entries();
+  assert.deepEqual(notes.map((item) => item.id), ["architecture", "preferences"]);
+  assert.deepEqual(unreadable, ["broken", "huge"]);
+  assert.match(memory.index(), /Modules stay independent/);
+  assert.match(memory.index(), /Unreadable notes, excluded from this index: broken, huge\./);
+  for (const id of ["broken", "huge"]) {
+    assert.throws(() => memory.read(id), new RegExp(`Memory ${id} could not be read[\\s\\S]*/memory delete ${id}`));
+  }
+  memory.save({ ...note, id: "architecture", summary: "Updated while damaged" });
+  assert.match(files.read("memory/MEMORY.md"), /Updated while damaged/);
+  assert.match(files.read("memory/MEMORY.md"), /broken, huge/);
+  memory.delete("broken");
+  assert.deepEqual(memory.entries().unreadable, ["huge"]);
+  assert.equal(memory.list().length, 2);
+  assert.doesNotMatch(memoryPrompt(memory), /broken/);
+});
+
+test("a damaged note still counts toward the note limit", (t) => {
+  const files = new StateFiles(join(directory(t), "state")), memory = new MemoryStore(files);
+  for (let i = 0; i < 31; i++) memory.save({ ...note, id: `topic-${i}` });
+  files.write("memory/damaged.md", "no header here\n");
+  assert.throws(() => memory.save({ ...note, id: "overflow" }), /limit reached/);
+  // Replacing the damaged note is the recovery path and must not hit the limit.
+  memory.save({ ...note, id: "damaged", summary: "Repaired" });
+  assert.equal(memory.read("damaged").summary, "Repaired");
+  assert.deepEqual(memory.entries().unreadable, []);
+});
+
 test("app state rejects symbolic link redirection into other directories", (t) => {
   const cwd = directory(t), outside = join(cwd, "outside"), state = join(cwd, "state");
   mkdirSync(outside); mkdirSync(state);
@@ -134,6 +169,8 @@ test("prompt scopes persist independently and compose without replacing the Pi b
     const response = await f.handlers.get("before_agent_start")(event, f.ctx);
     assert.equal(response, undefined); assert.equal(event.systemPrompt, "Native baseline");
     assert.equal(event.systemPromptOptions.sections.inherited, "Existing instructions");
+    assert.match(event.systemPromptOptions.sections.pi_extended_workflow, /batch them using available tools/);
+    assert.match(event.systemPromptOptions.sections.pi_extended_workflow, /Run required validation/);
     assert.equal(event.systemPromptOptions.sections.pi_extended_prompt.match(/Use npm/g).length, 1);
     assert.match(event.systemPromptOptions.sections.pi_extended_memory, /preferences/);
     assert.doesNotMatch(event.systemPromptOptions.sections.pi_extended_memory, /Details loaded only on demand/);
@@ -143,6 +180,13 @@ test("prompt scopes persist independently and compose without replacing the Pi b
   f.handlers.get("before_agent_start")(event, f.ctx);
   assert.doesNotMatch(event.systemPromptOptions.sections.pi_extended_memory, /Use concise/);
   await assert.rejects(f.tool("project_memory", { action: "read", id: note.id }), /disabled/);
+});
+
+test("a session prompt entry without data reports invalid text instead of failing on a missing property", () => {
+  assert.throws(() => sessionPrompt([{ type: "custom", customType: "pi-extended-prompt" }]), /Session prompt must be text/);
+  assert.throws(() => sessionPrompt([{ type: "custom", customType: "pi-extended-prompt", data: {} }]), /Session prompt must be text/);
+  assert.equal(sessionPrompt([{ type: "custom", customType: "pi-extended-prompt", data: { text: "Reply in Russian." } },
+    { type: "custom", customType: "other", data: {} }]), "Reply in Russian.");
 });
 
 test("plan barrier blocks every mutation and shell, persists on resume, and execution needs explicit user approval", async (t) => {
@@ -163,8 +207,18 @@ test("plan barrier blocks every mutation and shell, persists on resume, and exec
   await f.handlers.get("session_start")({}, f.ctx);
   assert.equal((await f.call("write")).block, true);
   assert.equal(f.sent.length, 0);
+  const planningPrompt = { systemPrompt: "Native", systemPromptOptions: { sections: {} } };
+  f.handlers.get("before_agent_start")(planningPrompt, f.ctx);
+  assert.equal(planningPrompt.systemPromptOptions.sections.pi_extended_workflow, undefined);
+  assert.doesNotMatch(planningPrompt.systemPromptOptions.sections.pi_extended_plan, /Once the requirements are met/);
   await f.command("plan", "execute");
   assert.equal(store.read().status, "executing"); assert.equal(await f.call("write"), undefined);
+  const executingPrompt = { systemPrompt: "Native", systemPromptOptions: { sections: {} } };
+  f.handlers.get("before_agent_start")(executingPrompt, f.ctx);
+  assert.equal(executingPrompt.systemPromptOptions.sections.pi_extended_workflow, undefined);
+  assert.match(executingPrompt.systemPromptOptions.sections.pi_extended_plan, /Once the requirements are met and required checks pass, finish/);
+  assert.match(executingPrompt.systemPromptOptions.sections.pi_extended_plan, /every required repository and plan check/);
+  assert.match(executingPrompt.systemPromptOptions.sections.pi_extended_plan, /real blocker invalidates the approved scope/);
   assert.equal(f.sent.length, 1); assert.match(f.sent[0].text, /approved plan/);
   await assert.rejects(f.tool("update_plan", { goal: "Do something else" }), /approved plan changed/);
   await f.tool("update_plan", { steps: proposal.steps.map((s) => ({ ...s, status: "completed" })) });

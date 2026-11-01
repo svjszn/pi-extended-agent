@@ -6,18 +6,16 @@ import { pathToFileURL } from "node:url";
 import { projectFiles, boundedText } from "../lib/project-state.js";
 import { MemoryStore, memoryPrompt } from "../lib/memory.js";
 import type { MemoryNote } from "../lib/memory.js";
-import { PlanStore, isPlanning, canPlanRead, renderPlan, parsePlan, validatePlan, PLAN_CHANGED, PLAN_ENTRY, PLAN_TOGGLE } from "../lib/plan.js";
+import { PlanStore, isPlanning, canPlanRead, renderPlan, parsePlan, validatePlan, PLAN_CHANGED, PLAN_ENTRY, PLAN_TOGGLE, PLAN_EXECUTION_GUIDANCE } from "../lib/plan.js";
 import type { Plan } from "../lib/plan.js";
 import { PromptStore, PROMPT_ENTRY, PROMPT_SCOPES, isPromptScope, sessionPrompt, promptAdditions } from "../lib/prompt.js";
 import type { PromptScope } from "../lib/prompt.js";
 import { isWorkspaceBookkeeping } from "../lib/workspace-tools.js";
 import { readPermissionMode, PERMISSION_DESCRIPTIONS } from "../lib/permissions.js";
-import { createWorkspaceScreen, createWorkspaceEditor } from "../ui/workspace-screen.js";
 import type { WorkspacePage } from "../ui/workspace-screen.js";
-import { createHeader } from "../ui/chrome.js";
-import { createUiTheme } from "../ui/theme.js";
 
 const string = { type: "string" };
+const TASK_WORKFLOW_GUIDANCE = "Keep work within the user's requested scope. When independent reads or searches are already known, batch them using available tools rather than spending one model round trip on each. Return relevant, bounded search results and reuse established findings; reread when edits or new evidence justify it. Preserve dependencies and serialize shared-state mutations. Run required validation, and finish when the requested result and checks are satisfied. Broaden investigation or repeat successful checks when new evidence, changed code, or explicit instructions warrant it. Never bypass permissions or conceal failed or unavailable checks to save time.";
 const memorySchema = { type: "object", properties: {
   action: { type: "string", enum: ["list", "read", "save", "delete"] }, id: string, title: string, summary: string, content: string,
 }, required: ["action"], additionalProperties: false };
@@ -36,11 +34,14 @@ function result(data: unknown) { return { content: [{ type: "text" as const, tex
 
 async function screen(pi: ExtensionAPI, ctx: ExtensionCommandContext, title: string, pages: WorkspacePage[], hint: string,
   actions: Record<string, string> = {}, initial = 0): Promise<{ action: string; page: number } | undefined> {
+  const [{ createWorkspaceScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
+    import("../ui/workspace-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
+  ]);
   let selected: { action: string; page: number } | undefined;
   await ctx.ui.custom((tui, _theme, _keys, done) => {
     const theme = createUiTheme();
     const measure = { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-    const header = createHeader({ mode: "regular" }, theme, measure, {
+    const header = createHeader({ mode: "regular" }, measure, {
       version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
     });
     const footer = tui.children.at(-1);
@@ -53,10 +54,13 @@ async function screen(pi: ExtensionAPI, ctx: ExtensionCommandContext, title: str
 }
 async function edit(pi: ExtensionAPI, ctx: ExtensionCommandContext, title: string, text: string) {
   if (ctx.mode !== "tui") return ctx.hasUI ? ctx.ui.editor(title, text) : undefined;
+  const [{ createWorkspaceEditor }, { createHeader }, { createUiTheme }] = await Promise.all([
+    import("../ui/workspace-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
+  ]);
   let saved: string | undefined;
   await ctx.ui.custom((tui, _theme, _keys, done) => {
     const theme = createUiTheme(), measure = { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-    const header = createHeader({ mode: "regular" }, theme, measure, {
+    const header = createHeader({ mode: "regular" }, measure, {
       version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
     });
     const footer = tui.children.at(-1);
@@ -149,9 +153,10 @@ export default function workspace(pi: ExtensionAPI) {
     sections.pi_extended_memory = `${memoryPrompt(memory)}\nMemory reads are allowed in every permission mode; saves/deletes require approval in Ask mode and are blocked in Read only and Plan modes.`;
     const additions = promptAdditions(prompts.read("global"), prompts.read("project"), sessionAddition);
     if (additions) sections.pi_extended_prompt = additions;
+    if (!plan || ["cancelled", "completed", "paused"].includes(plan.status)) sections.pi_extended_workflow = TASK_WORKFLOW_GUIDANCE;
     if (plan && !["cancelled", "completed", "paused"].includes(plan.status)) sections.pi_extended_plan =
       `${isPlanning(plan) ? "PLANNING MODE: research and prepare a plan only. No code edits, shell commands, or external side effects. Only the user can approve execution with /plan execute. Use update_plan to persist the proposed goal, steps, affected areas and checks; then present the plan and wait for approval."
-        : "Execute the user-approved plan below under the current permissions. Use update_plan to track step statuses, keeping only one in progress. Do not mark steps complete before verifying them."}\n\n${renderPlan(plan)}`;
+        : PLAN_EXECUTION_GUIDANCE}\n\n${renderPlan(plan)}`;
     return sections;
   };
   pi.on("before_agent_start", (event, ctx) => {

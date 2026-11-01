@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { createEscapeExitEditor } from "../dist/ui/escape-exit.js";
 import { setAvailableUpdates, setUpdateNoticeVisible } from "../dist/lib/update-status.js";
+import { getAppearance, setAppearance } from "../dist/lib/appearance.js";
 
 const piEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const require = createRequire(piEntry);
@@ -156,7 +157,51 @@ test("effort alternates with update status while Working and cursor clicks keep 
   for (const width of [1, 2, 8, 16, 24, 80]) assert.ok(editor.render(width).every((line) => visibleWidth(line) <= width));
 });
 
-test("high, xhigh and max animate in the input corner, pausing for updates and stopping on blur or disposal", async (t) => {
+test("paused high and xhigh labels use their exact solid colors, independent of theme and accent", (t) => {
+  const previous = getAppearance();
+  t.after(() => setAppearance(previous));
+  const { editor, state } = editorState(true);
+  t.after(() => editor.dispose());
+  for (const mode of ["dark", "light"]) for (const color of ["default", "green", "purple"]) {
+    setAppearance({ mode, color });
+    for (const [level, rgb] of [["high", "177;185;249"], ["xhigh", "175;135;255"]]) {
+      state.effort = level;
+      for (const [idle, focused] of [[true, true], [true, false], [false, false]]) {
+        state.idle = idle; editor.focused = focused;
+        const label = editor.render(80)[0];
+        assert.ok(label.includes(`\x1b[38;2;${rgb}m${level}\x1b[39m`), `${mode}/${color}/${level}`);
+        assert.deepEqual([...label.matchAll(/38;2;(\d+;\d+;\d+)m/g)].map(match => match[1]), [rgb]);
+        assert.equal(stripTerminalSequences(label).trim(), level);
+      }
+    }
+  }
+});
+
+test("idle effort stays static without scheduling timers or changing the draft and selected level", (t) => {
+  let time = 0, scheduled = 0;
+  const nativeInterval = globalThis.setInterval;
+  t.mock.method(globalThis, "setInterval", (...args) => { scheduled++; return nativeInterval(...args); });
+  const { editor, state } = editorState(true, () => time);
+  t.after(() => editor.dispose());
+  editor.focused = true;
+  editor.setText("Keep this draft");
+  for (const level of ["high", "xhigh", "max"]) {
+    state.effort = level;
+    const first = editor.render(80)[0];
+    time += 1000;
+    assert.equal(editor.render(80)[0], first, "unrelated idle renders must not advance the glow phase");
+    assert.equal(stripTerminalSequences(first).trim(), level);
+    assert.equal(state.effort, level); assert.equal(editor.getText(), "Keep this draft");
+  }
+  assert.equal(scheduled, 0, "idle animation must not even allocate a repeating timer");
+  state.idle = false;
+  for (let i = 0; i < 10; i++) editor.render(80);
+  assert.equal(scheduled, 1, "active renders share one animation timer");
+  editor.dispose(); editor.render(80);
+  assert.equal(scheduled, 1, "a disposed editor cannot restart its animation");
+});
+
+test("high, xhigh and max animate only during work, pausing for idle, updates, blur and disposal", async (t) => {
   let time = 0, renders = 0;
   // Node 22's experimental MockTimers requeues intervals cleared inside their
   // own callback. Exercise actual timer cancellation for this lifecycle check.
@@ -165,6 +210,7 @@ test("high, xhigh and max animate in the input corner, pausing for updates and s
     await new Promise((resolve) => setTimeout(resolve, duration));
   };
   const { editor, state, tui } = editorState(true, () => time);
+  state.idle = false;
   tui.requestRender = () => { renders++; };
   editor.focused = true;
   t.after(() => { editor.dispose(); setAvailableUpdates([]); });
@@ -173,7 +219,7 @@ test("high, xhigh and max animate in the input corner, pausing for updates and s
     const first = editor.render(80);
     const before = renders;
     await tick();
-    assert.ok(renders > before, `${level} must request idle repaints`);
+    assert.ok(renders > before, `${level} must request repaints during work`);
     const next = editor.render(80);
     assert.notEqual(first[0], next[0]);
     assert.equal(stripTerminalSequences(first[0]).trim(), level);
@@ -181,6 +227,14 @@ test("high, xhigh and max animate in the input corner, pausing for updates and s
     const channels = [...next[0].matchAll(/38;2;(\d+;\d+;\d+)m/g)].map((match) => match[1]);
     assert.ok(new Set(channels).size > 1, `${level} must use visible per-letter color changes`);
   }
+  // Settlement/cancellation may happen before another terminal frame. The
+  // timer must notice the idle state without requesting one more repaint.
+  state.idle = true;
+  const idle = renders; await tick(); assert.equal(renders, idle);
+  const frozen = editor.render(80)[0];
+  await tick(); assert.equal(renders, idle); assert.equal(editor.render(80)[0], frozen);
+  state.idle = false; editor.render(80);
+  await tick(); assert.ok(renders > idle, "a subsequent run must restart the animation");
   setAvailableUpdates([{ kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "Fixture" }]);
   setUpdateNoticeVisible(true); editor.render(80);
   const paused = renders; await tick(); assert.equal(renders, paused);
@@ -193,6 +247,11 @@ test("high, xhigh and max animate in the input corner, pausing for updates and s
   const blurred = renders; await tick(); assert.equal(renders, blurred);
   editor.focused = true; editor.render(80);
   await tick(); assert.ok(renders > blurred);
+  state.idle = true;
+  const cancelled = renders; await tick(); assert.equal(renders, cancelled);
+  state.idle = false; editor.render(80);
+  await tick(); assert.ok(renders > cancelled, "work after cancellation must animate again");
+  assert.equal(state.effort, "high");
   editor.dispose();
   const stopped = renders; await tick(); assert.equal(renders, stopped);
 });

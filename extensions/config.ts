@@ -1,19 +1,17 @@
 import { getAgentDir, SettingsManager, VERSION } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { configSections } from "../lib/config.js";
 import { CONFIG_PREFERENCES } from "../lib/config-preferences.js";
 import type { ConfigPreferences, ConfigPreferencesUI } from "../lib/config-preferences.js";
-import { createConfigScreen } from "../ui/config-screen.js";
-import { configLines } from "../ui/command-views.js";
-import { createUiTheme } from "../ui/theme.js";
-import { createHeader } from "../ui/chrome.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function configCommand(pi: ExtensionAPI) {
   pi.registerCommand("config", {
     description: "Show configuration and edit preferences in the same screen",
     handler: async (_args, ctx) => {
+      const [{ configSections }, { configLines }, { createUiTheme }] = await Promise.all([
+        import("../lib/config.js"), import("../ui/command-views.js"), import("../ui/theme.js"),
+      ]);
       const agentDir = getAgentDir();
       const readSections = (tuiMode?: string) => configSections(ctx, pi,
         SettingsManager.create(ctx.cwd, agentDir, { projectTrusted: ctx.isProjectTrusted() }), {
@@ -25,13 +23,16 @@ export default function configCommand(pi: ExtensionAPI) {
         if (ctx.hasUI) ctx.ui.notify(output, "info"); else console.error(output);
         return;
       }
+      const [{ createConfigScreen }, { createHeader }] = await Promise.all([
+        import("../ui/config-screen.js"), import("../ui/chrome.js"),
+      ]);
       let initialTab: "overview" | "preferences" = "overview";
       while (true) {
         let preferences: ConfigPreferences | undefined;
         const reopen = await ctx.ui.custom<boolean>((tui, _theme, _keys, done) => {
           const theme = createUiTheme();
           const measure = { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
-          const header = createHeader({ mode: "regular" }, theme, measure, {
+          const header = createHeader({ mode: "regular" }, measure, {
             version: VERSION, getModel: () => ctx.model, getThinkingLevel: () => pi.getThinkingLevel(), getCwd: () => ctx.cwd,
           });
           const footer = tui.children.at(-1);

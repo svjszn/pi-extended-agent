@@ -27,7 +27,7 @@
 
 | Component | Version / default |
 | :--- | :--- |
-| Package | `pi-extended-agent` · `1.1.0` |
+| Package | `pi-extended-agent` · `1.2.0` |
 | Bundled Pi fallback | `1.4.0` |
 | Managed engine | Updated separately with `pi update --engine` |
 | Startup model | Selected by the active Pi engine from its settings and catalog |
@@ -51,7 +51,7 @@ Pi provides the agent loop, tools, authentication, and sessions. This package pr
 
 The header shows the actual engine version, model, effort, and current working directory. Short conversations sit above the input; the footer shows the permissions mode at the left: `auto mode` for full access, `ask mode` for approvals, or `read only`.
 
-The terminal tab is titled **Pi Coding Agent**. Chat messages and input align with the logo's two-column inset. User messages have a subtle dark gray background with light text; assistant replies keep the terminal background. Below the input, **auto mode** appears on the left and current context usage on the right, for example `~24k / 200k · 12% context`. Narrow terminals show a shorter indicator.
+The terminal tab is titled **Pi Coding Agent**. Chat messages and input align with the logo's two-column inset. User messages have a subtle dark gray background with light text and an uncolored separating row; assistant replies keep the terminal background. Tool calls stay compact. On Windows, Pi suppresses the terminal/taskbar progress indicator and keeps background update checks from renaming the tab; Windows Terminal settings are unchanged. Below the input, **auto mode** appears on the left and current context usage on the right, for example `~24k / 200k · 12% context`. Narrow terminals show a shorter indicator.
 
 ## Installation
 
@@ -122,6 +122,8 @@ Run `pi` from the project you want to work on. Inside Pi:
 1. Enter `/login`, select ChatGPT/Codex, and complete the browser sign-in if needed. Existing standard-profile credentials are reused.
 2. Enter `/status` to check the active Pi version, selected model, and authentication status. `/config info` shows configuration paths.
 
+`/login` and `/logout` use the shared borderless command layout for provider selection. Sign-in and credential removal still run through Pi; `/logout` removes saved credentials but not environment variables or provider-side access.
+
 If the selected provider has no configured authentication, startup shows a warning and the header keeps a `/login PROVIDER` hint. The hint disappears after sign-in. This checks local configuration only; it does not verify token validity with the provider.
 
 Each computer needs its own sign-in. The standard profile is `~/.pi/agent/`, normally `C:\Users\YOUR_NAME\.pi\agent\` on Windows. `PI_CODING_AGENT_DIR` remains available for an explicitly chosen alternative profile.
@@ -171,7 +173,7 @@ The command menu omits `/settings`, `/tree`, `/thinking`, `/scoped-models`, `/im
 
 `/status` shows the active Pi engine version, session ID, provider login method, model, MCP servers, and active tool names. The model appears with MCP and tools, and shows only its model ID. Login reflects configured credentials without resolving or refreshing them. MCP metadata combines the engine's configuration reader with extension registrations and tool namespaces; project settings respect Pi's trust decision. Registered tools do not prove a live connection. Engines without a native MCP configuration reader show the servers inferred from registered tools and extensions.
 
-`/effort` opens a horizontal slider with the levels supported by the current model. Use **←/→** or drag the slider, apply with **Enter**, or cancel with **Escape**. High and xhigh glow purple; max uses an animated rainbow when the model supports it. `/effort high` sets a level directly. The current effort appears in the header.
+`/effort` opens a horizontal slider with the levels supported by the current model. Use **←/→** or drag the slider, apply with **Enter**, or cancel with **Escape**. High and xhigh glow purple; max uses an animated rainbow when the model supports it. `/effort high` sets a level directly. The current effort appears in the header. The input-corner glow stays static while idle and animates only during active work while the input is focused; this does not change the selected reasoning effort.
 
 `/model` uses the same header, two-column inset, borderless body, monochrome palette, and input dock as the other command screens. Search stays in the input row; the current model uses `●` and the highlighted row is bold. Native model discovery, scoped-model switching with Tab, selection with Enter, and saving the default with Ctrl+S retain Pi's behavior. Escape cancels the selector and its background catalog refresh. Model-screen compatibility is checked before activating an engine update.
 
@@ -264,7 +266,7 @@ pi --no-extensions
 | [`ui/pi-logo.svg`](ui/pi-logo.svg) | Reference Pi logo geometry |
 | [`test/`](test/) | Check UI, startup, and update behavior |
 
-Source code uses TypeScript with `strict` enabled. Plain `npm ci` builds it through `prepare`; when using `npm ci --ignore-scripts`, run `npm run build` explicitly. Compilation writes JavaScript to `dist/`, which is ignored by Git and included in the npm package. Extensions load from `dist/extensions/`; installed users do not need TypeScript or a build step. Keep TypeScript paths in `tsconfig.json` aligned with the bundled Pi dependency; updated engines resolve their own modules at runtime.
+Source code uses TypeScript with `strict` enabled. Plain `npm ci` builds it through `prepare`; when using `npm ci --ignore-scripts`, run `npm run build` explicitly. Each build clears `dist/` before compiling, so deleted sources cannot leave stale JavaScript in a package. Pi loads only the explicit production extension files in `package.json`; unexpected extension output fails the build. Installed users do not need TypeScript or a build step. Development diagnostics live in `dev/`, compile separately with `npm run build:dev` into `.local/dev-dist/`, and are excluded from the npm package. Keep TypeScript paths in `tsconfig.json` aligned with the bundled Pi dependency; updated engines resolve their own modules at runtime.
 
 After editing source files, run `npm run build` before restarting a directly linked `pi`. `npm run pi`, `npm start`, and `npm test` build automatically. For continuous compilation in another terminal, use `npm run build -- --watch`. Tests exercise the compiled JavaScript that ships to users. `npm pack` builds before creating an archive.
 

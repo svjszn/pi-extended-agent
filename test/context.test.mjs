@@ -113,7 +113,7 @@ test("context screen renders its header, scrolls details, and closes on Escape a
   const { ctx, pi } = fixture();
   const report = readContextReport(ctx, pi, settings);
   const theme = createUiTheme();
-  const header = createHeader({ mode: "regular" }, theme, measure, {
+  const header = createHeader({ mode: "regular" }, measure, {
     version: "test", getModel: () => ({ id: "test-model" }), getThinkingLevel: () => "medium",
   });
   const tui = { terminal: { rows: 30 }, requestRender() {} };
@@ -157,18 +157,28 @@ test("live footer refreshes on Pi events without recounting tokens during render
   const { ctx, pi, state } = fixture();
   const handlers = new Map();
   let footer, header, calls = 0, configured = false;
-  const notices = [];
+  const notices = [], titles = [], progress = [];
+  const terminal = { setTitle: (title) => titles.push(title), setProgress: (active) => progress.push(active), write() {} };
+  const originalTitle = terminal.setTitle, originalProgress = terminal.setProgress;
   ctx.mode = "tui";
   ctx.model.provider = "openai-codex";
   ctx.modelRegistry = { getProviderAuthStatus: () => ({ configured }) };
   ctx.ui = {
-    setHeader(create) { header = create({ mode: "regular", terminal: { setTitle() {} }, requestRender() {} }, createUiTheme()); },
+    setHeader(create) { header = create({ mode: "regular", terminal, requestRender() {} }, createUiTheme()); },
     setFooter(create) { footer = create({}, createUiTheme(), {}); },
     notify(message, type) { notices.push({ message, type }); },
   };
   ctx.getContextUsage = () => { calls++; return state.usage; };
   factory({ ...pi, on: (event, handler) => handlers.set(event, handler), getThinkingLevel: () => "medium" });
   handlers.get("session_start")({}, ctx);
+  assert.equal(titles.at(-1), "Pi Coding Agent");
+  titles.push("npm test"); handlers.get("tool_execution_end")({}, ctx);
+  assert.equal(titles.at(-1), "Pi Coding Agent");
+  titles.push("other command"); handlers.get("agent_settled")({}, ctx);
+  assert.equal(titles.at(-1), "Pi Coding Agent");
+  if (process.platform === "win32") {
+    terminal.setProgress(true); assert.deepEqual(progress, [false]);
+  }
   assert.equal(notices[0].type, "warning");
   assert.match(notices[0].message, /\/login openai-codex/);
   assert.match(measure.stripTerminalSequences(header.render(100).join("\n")), /\/login openai-codex/);
@@ -184,4 +194,5 @@ test("live footer refreshes on Pi events without recounting tokens during render
   handlers.get("session_compact")({}, ctx);
   assert.match(measure.stripTerminalSequences(footer.render(80)[0]), /— \/ 200k/);
   handlers.get("session_shutdown")({}, ctx);
+  assert.equal(terminal.setTitle, originalTitle); assert.equal(terminal.setProgress, originalProgress);
 });
