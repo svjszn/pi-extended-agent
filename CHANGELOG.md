@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show elapsed run time and generated output tokens beside Working. Include streamed reasoning and tool arguments, mark live estimates with `~` until provider usage arrives, and reset counters when a run settles or the session changes. Preserve native status messages, effort and update labels, and narrow layouts.
+
 ## 1.3.0
 
 - Check `/agents` and the `task` tool in the installed npm artifact, including agent definition persistence, unknown-agent errors, command screens on cold load and reload, and disk session resume. Cover editor save/cancel behavior and narrow layouts without widening an explicit empty tool selection.

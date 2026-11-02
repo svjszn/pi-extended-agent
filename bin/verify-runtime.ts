@@ -170,11 +170,13 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     assert.ok(assistant.render(width).map(stripTerminalSequences).some((line) => line.startsWith("  Assistant reply")), "Runtime breaks assistant message inset");
     let modeToggles = 0, thinkingChanges = 0;
     const effortSteps: number[] = [];
-    const Editor = createEscapeExitEditor(api.CustomEditor, matchesKey, { isIdle: () => true, hasPendingMessages: () => false },
+    const Editor = createEscapeExitEditor(api.CustomEditor, matchesKey, { isIdle: () => true, hasPendingMessages: () => false,
+      getRunProgress: () => ({ elapsedMs: 83_000, outputTokens: 3200, estimated: false }) },
       { getLevel: () => "medium", step: (direction) => { effortSteps.push(direction); } }, () => { modeToggles++; });
     const input = new Editor(tui as TUI, getEditorTheme(), new KeybindingsManager());
     input.setWorkingStatusIndicator({ renderInBorder: () => "Working", renderSpinnerInBorder: () => "*" } as unknown as Parameters<typeof input.setWorkingStatusIndicator>[0]);
     assert.ok(stripTerminalSequences(input.render(width)[0]).startsWith("  Working"), "Runtime breaks Working inset");
+    if (width >= 80) assert.ok(stripTerminalSequences(input.render(width)[0]).includes("1m 23s · ↓ 3.2k tokens"), "Runtime breaks run progress");
     assert.ok(!stripTerminalSequences(input.render(width)[1]).includes("Working"), "Runtime puts Working in the input border");
     input.setWorkingStatusIndicator(undefined);
     input.onAction("app.thinking.cycle", () => { thinkingChanges++; });

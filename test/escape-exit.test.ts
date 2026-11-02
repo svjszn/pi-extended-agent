@@ -1,6 +1,7 @@
 import type { ExtensionContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Component, EditorTheme } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { RunProgressSnapshot } from "../lib/run-progress.js";
 const { captureFlashes } = await import(new URL("../dist/bin/flash-interface.js", import.meta.url).href) as typeof import("../bin/flash-interface.js");
 const { clearFlash, visibleFlash } = await import(new URL("../dist/lib/flash-status.js", import.meta.url).href) as typeof import("../lib/flash-status.js");
 import assert from "node:assert/strict";
@@ -17,11 +18,11 @@ const { matchesKey, visibleWidth, stripTerminalSequences } = await import(pathTo
 const { CustomEditor } = await import(new URL("./modes/interactive/components/custom-editor.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/custom-editor.js");
 const { KeybindingsManager } = await import(new URL("./core/keybindings.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js");
 
-function editorState(showEffort = false, now = Date.now) {
+function editorState(showEffort = false, now = Date.now, getRunProgress?: () => RunProgressSnapshot | undefined) {
   const state = { idle: true, pending: false, exits: 0, cancels: 0, effort: "medium", modeSwitches: 0 };
   const tui = { children: [] as Component[], requestRender() {}, terminal: { columns: 80, rows: 24 } };
   const Editor = createEscapeExitEditor(CustomEditor, matchesKey, {
-    isIdle: () => state.idle, hasPendingMessages: () => state.pending,
+    isIdle: () => state.idle, hasPendingMessages: () => state.pending, getRunProgress,
   }, showEffort ? { getLevel: () => state.effort } : undefined, () => { state.modeSwitches++; }, now);
   const theme = { borderColor: (text: string) => text, selectList: {} };
   const editor = new Editor((tui as unknown as ConstructorParameters<typeof Editor>[0]), theme as EditorTheme, new KeybindingsManager(), { embedWorkingStatus: true });
@@ -180,6 +181,66 @@ test("paused high and xhigh labels use their exact solid colors, independent of 
       }
     }
   }
+});
+
+test("Working shows run time and output tokens without moving effort, updates, or the input", (t) => {
+  const progress = { elapsedMs: 83_200, outputTokens: 3200, estimated: false };
+  const { editor, state } = editorState(true, Date.now, () => progress);
+  t.after(() => { editor.dispose(); setAvailableUpdates([]); });
+  editor.setText("Keep this draft");
+  editor.setWorkingStatusIndicator({ renderInBorder: () => "Working", renderSpinnerInBorder: () => "*" } as unknown as Parameters<typeof editor.setWorkingStatusIndicator>[0]);
+  const line = stripTerminalSequences(editor.render(80)[0]);
+  assert.match(line, /^  Working · 1m 23s · ↓ 3\.2k tokens/);
+  assert.ok(line.endsWith("medium  "));
+  assert.match(stripTerminalSequences(editor.render(80)[2]), /^❯ Keep this draft/);
+  progress.estimated = true;
+  assert.match(stripTerminalSequences(editor.render(80)[0]), /↓ ~3\.2k tokens/);
+  setAvailableUpdates([{ kind: "agent", version: "1.4.0", current: "1.3.0", command: "pi update", message: "Fixture" }]);
+  setUpdateNoticeVisible(true);
+  const update = stripTerminalSequences(editor.render(100)[0]);
+  assert.match(update, /1m 23s · ↓ ~3\.2k tokens/);
+  assert.ok(update.endsWith("Update 1.4.0 · pi update  "));
+  for (const width of [1, 2, 8, 16, 24, 40, 80, 120]) {
+    assert.ok(editor.render(width).every(value => visibleWidth(value) <= width));
+  }
+  setUpdateNoticeVisible(false);
+  progress.elapsedMs = 3_602_000;
+  assert.match(stripTerminalSequences(editor.render(100)[0]), /1h 0m 2s/);
+  assert.equal(editor.getText(), "Keep this draft");
+  assert.equal(state.effort, "medium");
+});
+
+test("run clock repaints once a second only while active and stops on settlement, blur, and disposal", (t) => {
+  const timers = new Map<ReturnType<typeof setInterval>, () => void>();
+  t.mock.method(globalThis, "setInterval", ((callback: () => void, delay: number) => {
+    assert.equal(delay, 1000);
+    const timer = { unref() {} } as unknown as ReturnType<typeof setInterval>;
+    timers.set(timer, callback); return timer;
+  }) as typeof setInterval);
+  t.mock.method(globalThis, "clearInterval", ((timer: ReturnType<typeof setInterval>) => { timers.delete(timer); }) as typeof clearInterval);
+  let progress: RunProgressSnapshot | undefined, renders = 0;
+  const { editor, tui } = editorState(true, Date.now, () => progress);
+  t.after(() => editor.dispose());
+  editor.focused = true;
+  tui.requestRender = () => { renders++; };
+  editor.render(80);
+  assert.equal(timers.size, 0);
+  progress = { elapsedMs: 0, outputTokens: 0, estimated: false };
+  editor.refreshRunProgress(); editor.render(80); editor.render(80);
+  assert.equal(timers.size, 1);
+  const tick = [...timers.values()][0];
+  const before = renders; tick(); assert.equal(renders, before + 1);
+  progress = undefined; editor.refreshRunProgress();
+  assert.equal(timers.size, 0, "settlement clears the timer immediately");
+  progress = { elapsedMs: 0, outputTokens: 0, estimated: false };
+  editor.render(80);
+  editor.focused = false;
+  const blurred = renders; [...timers.values()][0]();
+  assert.equal(renders, blurred); assert.equal(timers.size, 0);
+  editor.focused = true; editor.render(80);
+  assert.equal(timers.size, 1);
+  editor.dispose(); editor.render(80);
+  assert.equal(timers.size, 0, "a disposed editor cannot restart the clock");
 });
 
 test("idle effort stays static without scheduling timers or changing the draft and selected level", (t) => {

@@ -16,6 +16,14 @@ Windows, background update checks use a separate hidden console and Pi suppresse
 the terminal/taskbar progress indicator. This does not change Windows Terminal
 settings or the in-app Working indicator.
 
+During a run, the status above the input shows elapsed time and generated output
+tokens, for example `Working · 1m 23s · ↓ 3.2k tokens`. This includes the main
+agent's reasoning, response text, and tool arguments across its model calls.
+An estimate is marked with `~` while streaming if the provider has not reported
+usage yet; reported output usage replaces that estimate when available.
+The timer includes tool work and retries. Both counters reset for the next run.
+Narrow terminals shorten or hide the details to keep the status and effort readable.
+
 ## Resume a Chat
 
 Run either command from your terminal:

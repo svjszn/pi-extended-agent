@@ -6,6 +6,8 @@ import type { TreeComponent } from "./types.js";
 import { visibleUpdateLabel, visibleUpdateVersion } from "../lib/update-status.js";
 import { flashExpiry, visibleFlash } from "../lib/flash-status.js";
 import { animatedEffort, effortGlow } from "./effort-style.js";
+import { contextTokens } from "./context-format.js";
+import type { RunProgressSnapshot } from "../lib/run-progress.js";
 
 const inputInset = (width: number) => Math.min(2, Math.floor(Math.max(0, width - 1) / 2));
 
@@ -19,7 +21,8 @@ function hasRunningShell(components: TreeComponent[]): boolean {
   return false;
 }
 
-export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesKey: typeof match, ctx: Pick<ExtensionContext, "isIdle" | "hasPendingMessages">,
+export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesKey: typeof match,
+  ctx: Pick<ExtensionContext, "isIdle" | "hasPendingMessages"> & { getRunProgress?(): RunProgressSnapshot | undefined },
   effort?: { getLevel(): string; step?(direction: -1 | 1): void }, toggleMode?: () => void, now = Date.now) {
   const theme = createUiTheme();
   return class EscapeExitEditor extends BaseEditor {
@@ -29,10 +32,28 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
     dispose() {
       this.disposed = true;
       this.stopAnimation();
+      this.watchProgress(false);
       clearTimeout(this.flashTimer);
       this.flashTimer = undefined;
     }
     private stopAnimation() { clearInterval(this.animation); this.animation = undefined; }
+    private progressTimer: ReturnType<typeof setInterval> | undefined;
+    private watchProgress(active: boolean) {
+      if (!active || !this.focused || this.disposed) {
+        clearInterval(this.progressTimer); this.progressTimer = undefined; return;
+      }
+      if (this.progressTimer) return;
+      this.progressTimer = setInterval(() => {
+        if (this.disposed || !this.focused || !ctx.getRunProgress?.()) { this.watchProgress(false); return; }
+        this.tui.requestRender();
+      }, 1000);
+      this.progressTimer.unref?.();
+    }
+    refreshRunProgress() {
+      if (this.disposed) return;
+      this.watchProgress(!!ctx.getRunProgress?.());
+      this.tui.requestRender();
+    }
     private animate(enabled: boolean) {
       if (!enabled || !this.focused) { this.stopAnimation(); return; }
       if (this.animation || this.disposed) return;
@@ -88,7 +109,18 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       const level = effort?.getLevel() ?? "";
       const label = truncateToWidth(flash ?? update ?? level, rightWidth, "");
       const statusWidth = Math.max(0, inner - (label ? visibleWidth(label) + 2 : 0));
-      const status = statusWidth ? truncateToWidth(this.statusIndicator?.renderInBorder(statusWidth) ?? "", statusWidth, "") : "";
+      let status = statusWidth ? truncateToWidth(this.statusIndicator?.renderInBorder(statusWidth) ?? "", statusWidth, "") : "";
+      const progress = ctx.getRunProgress?.();
+      this.watchProgress(!!progress);
+      if (status && progress) {
+        const seconds = Math.floor(progress.elapsedMs / 1000);
+        const duration = seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+          : `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}m ${seconds % 60}s`;
+        const tokens = `${progress.estimated ? "~" : ""}${contextTokens(progress.outputTokens)}`;
+        const detail = [` · ${duration} · ↓ ${tokens} tokens`, ` · ${duration} · ↓ ${tokens}`, ` · ${duration}`]
+          .find(value => visibleWidth(status) + visibleWidth(value) <= statusWidth);
+        if (detail) status += theme.fg("muted", detail);
+      }
       // Reserve the row only when it carries something: an unauthenticated
       // session has no effort to show and must not leave a blank line.
       this.statusRows = status || label ? 1 : 0;
