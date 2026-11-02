@@ -10,7 +10,7 @@ import { PlanStore, isPlanning, canPlanRead, renderPlan, parsePlan, validatePlan
 import type { Plan } from "../lib/plan.js";
 import { PromptStore, PROMPT_ENTRY, PROMPT_SCOPES, isPromptScope, sessionPrompt, promptAdditions } from "../lib/prompt.js";
 import type { PromptScope } from "../lib/prompt.js";
-import { isWorkspaceBookkeeping, isDelegationTool } from "../lib/workspace-tools.js";
+import { isWorkspaceBookkeeping, isDelegationTool, isUserQuestionTool } from "../lib/workspace-tools.js";
 import { readPermissionMode, PERMISSION_DESCRIPTIONS } from "../lib/permissions.js";
 import type { WorkspacePage } from "../ui/workspace-screen.js";
 import { CODE_MODE_CHANGED, CODE_MODE_ENTRY, readCodeMode } from "../lib/code-mode.js";
@@ -192,6 +192,7 @@ export default function workspace(pi: ExtensionAPI) {
     // A broken state must not silently disable the planning barrier.
     if (!isPlanning(plan) && !stateError) return;
     if (canPlanRead(event.toolName, pi.getAllTools())) return;
+    if (isUserQuestionTool(event.toolName, pi.getAllTools())) return;
     if (!stateError && isWorkspaceBookkeeping(event.toolName, event.input, pi.getAllTools())) return;
     // A subagent may research during planning; its own guard blocks changes.
     if (!stateError && isDelegationTool(event.toolName, pi.getAllTools())) return;

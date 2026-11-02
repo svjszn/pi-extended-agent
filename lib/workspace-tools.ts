@@ -26,3 +26,8 @@ export function isWorkspaceBookkeeping(name: string, input: unknown, tools: Tool
 export function isDelegationTool(name: string, tools: Tools) {
   return name === "task" && fromExtension(name, tools, "agents");
 }
+
+/** Asking collects information only; it never grants permissions or approves a plan. */
+export function isUserQuestionTool(name: string, tools: Tools) {
+  return name === "ask_user" && fromExtension(name, tools, "ask-user");
+}

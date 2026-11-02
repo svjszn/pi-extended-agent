@@ -18,20 +18,23 @@ export interface PanelOptions<T> {
   measure: Measure;
   done(result?: boolean): void;
   load(signal: AbortSignal): T | Promise<T>;
-  renderBody(data: T, width: number, theme: Palette, measure: Measure, options: { period: Period }): string[];
+  renderBody(data: T, width: number, theme: Palette, measure: Measure, options: { period: Period; controls?: PanelControls }): string[];
   renderHeader?(width: number): string[];
   renderFooter?(width: number): string[] | undefined;
   periods?: Period[];
   onInput?(input: string, controls: PanelControls): boolean;
   renderInput?(width: number, focused: boolean): string;
+  onBodyMouse?(event: TuiMouseEvent, position: { line: number; column: number }, controls: PanelControls): boolean;
+  onInputMouse?(event: TuiMouseEvent, controls: PanelControls): boolean;
   onDispose?(): void;
 }
 
 /** Full terminal screen; the prompt is display-only while this view has focus. */
-export function createCommandPanel<T>({ title, tui, theme, measure, done, load, renderBody, renderHeader, renderFooter, periods, onInput, renderInput, onDispose }: PanelOptions<T>) {
+export function createCommandPanel<T>({ title, tui, theme, measure, done, load, renderBody, renderHeader, renderFooter, periods, onInput, renderInput, onBodyMouse, onInputMouse, onDispose }: PanelOptions<T>) {
   const controller = new AbortController();
   let data: T | undefined, error: string | undefined, revealLine: number | undefined;
   let closed = false, offset = 0, maxOffset = 0, pageSize = 1, period = 0;
+  let bodyTop = 0, inputRow = -1, inputInset = 0;
   const repaint = () => { if (!closed) tui.requestRender(); };
   const ready = Promise.resolve().then(() => load(controller.signal)).then((value) => {
     data = value;
@@ -56,6 +59,7 @@ export function createCommandPanel<T>({ title, tui, theme, measure, done, load, 
     invalidate() {},
     dispose,
     handleInput(input: string) {
+      if (closed) return;
       if (onInput?.(input, controls)) return;
       const key = (name: KeyId) => measure.matchesKey(input, name);
       if (key("escape") || key("enter") || key("ctrl+c")) { close(); return; }
@@ -71,6 +75,12 @@ export function createCommandPanel<T>({ title, tui, theme, measure, done, load, 
       else if (key("end")) scroll(maxOffset);
     },
     handleMouse(event: TuiMouseEvent) {
+      if (closed) return { handled: false };
+      if (event.type === "click" && event.button === "left") {
+        if (event.y === inputRow && onInputMouse?.({ ...event, x: Math.max(0, event.x - inputInset), y: 0 }, controls)) return { handled: true };
+        if (event.y >= bodyTop && event.y < bodyTop + pageSize
+          && onBodyMouse?.(event, { line: event.y - bodyTop + offset, column: event.x - inputInset }, controls)) return { handled: true };
+      }
       if (event.type !== "wheel") return { handled: false };
       scroll(event.wheelDelta || 0);
       return { handled: true };
@@ -83,10 +93,13 @@ export function createCommandPanel<T>({ title, tui, theme, measure, done, load, 
       const header = height >= 18 && renderHeader ? ["", ...renderHeader(width), ""] : [];
       const heading = height >= 8 ? [pad + theme.fg("primary", theme.bold(title)), ""] : [];
       const body = error ? [theme.fg("warning", error)] : data === undefined
-        ? [theme.fg("muted", "Loading…")] : renderBody(data, inner, theme, measure, { period: periods?.[period] || "all" });
+        ? [theme.fg("muted", "Loading…")] : renderBody(data, inner, theme, measure, { period: periods?.[period] || "all", controls });
       const lines = body.flatMap((line) => measure.wrapTextWithAnsi(line, inner));
       const inputHeight = height >= 6 ? 4 : Math.min(2, height);
       pageSize = Math.max(0, height - header.length - heading.length - inputHeight);
+      bodyTop = header.length + heading.length;
+      inputRow = bodyTop + pageSize + (inputHeight === 4 ? 1 : 0);
+      inputInset = indent;
       maxOffset = Math.max(0, lines.length - pageSize);
       if (revealLine !== undefined) {
         if (revealLine < offset) offset = revealLine;

@@ -1,7 +1,7 @@
 import { tuiFixture } from "./helpers.ts";
 import { commandFixture } from "./helpers.ts";
 import type { PanelFactory } from "./helpers.ts";
-import type { ExtensionUIContext, CustomEditor } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext, ExtensionToolContext, CustomEditor } from "@earendil-works/pi-coding-agent";
 import { present } from "./helpers.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -40,7 +40,7 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
     const loader = new api.DefaultResourceLoader({ cwd: directory, agentDir: present(process.env.PI_CODING_AGENT_DIR),
       settingsManager: api.SettingsManager.inMemory(), noExtensions: true, noSkills: true, noThemes: true,
       noPromptTemplates: true, noContextFiles: true, additionalExtensionPaths: [root] });
-    const selectors = ["agents", "appearance", "config", "effort", "permissions", "skills", "workspace"].map(name => `ui/${name}-screen.js`);
+    const selectors = ["ask-user", "agents", "appearance", "config", "effort", "permissions", "skills", "workspace"].map(name => `ui/${name}-screen.js`);
     const deferred = [...selectors, "ui/command-views.js", "ui/context-view.js", "ui/status-view.js",
       "lib/activity.js", "lib/config.js", "lib/skills.js", "lib/status.js", "lib/usage.js", "bin/update.js", "bin/verify-runtime.js"];
     let views = 0;
@@ -111,6 +111,14 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
         assert.equal(views, before + 1, `/${name} did not open after ${round ? "reload" : "cold load"}: ${notices.at(-1)?.message}`);
       }
       assert.equal(level, "medium", "Cancelling selectors must not change reasoning effort");
+      expected = /A question for you/;
+      const question = present(loaded.extensions.find(extension => extension.tools.has("ask_user"))?.tools.get("ask_user"));
+      const beforeQuestion = views;
+      const questionResult = await question.definition.execute("question-fixture", { questions: [
+        { id: "fixture", title: "Fixture", question: "Which option?", options: [{ id: "a", label: "First" }, { id: "b", label: "Second" }] },
+      ] }, undefined, undefined, ctx as unknown as ExtensionToolContext);
+      assert.equal(views, beforeQuestion + 1, "The question screen must open cold and after reload");
+      assert.match(JSON.stringify(questionResult), /cancelled/);
       for (const name of selectors) assert.ok(loadedModules.has(name), `Unexercised module: ${name}`);
     }
     if (bound && !failApproval) {
@@ -178,6 +186,6 @@ if (process.argv[2] === "--probe") {
       env: { ...process.env, PI_CODING_AGENT_DIR: join(directory, "profile"), PI_EXTENDED_RUNTIME_DIR: join(directory, "runtimes"), PI_OFFLINE: "1" },
     });
     assert.equal(result.status, 0, result.stderr.slice(-4000));
-    assert.deepEqual(JSON.parse(present(result.stdout.trim().split("\n").at(-1))), { views: failure ? 0 : 30, failApproval: failure, bound: mode !== "unbound" });
+    assert.deepEqual(JSON.parse(present(result.stdout.trim().split("\n").at(-1))), { views: failure ? 0 : 32, failApproval: failure, bound: mode !== "unbound" });
   });
 }

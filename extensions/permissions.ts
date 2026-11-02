@@ -4,7 +4,7 @@ import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithA
 import { PERMISSION_MODES, PERMISSION_LABELS, PERMISSION_DESCRIPTIONS, PERMISSIONS_ENTRY, PERMISSIONS_CHANGED,
   isPermissionMode, readPermissionMode, permissionDecision, permissionRequest } from "../lib/permissions.js";
 import type { PermissionMode } from "../lib/permissions.js";
-import { isWorkspaceBookkeeping, isDelegationTool } from "../lib/workspace-tools.js";
+import { isWorkspaceBookkeeping, isDelegationTool, isUserQuestionTool } from "../lib/workspace-tools.js";
 import { serializeApproval } from "../lib/approval-queue.js";
 import { PLAN_ENTRY, isPlanning, canPlanRead } from "../lib/plan.js";
 import type { Plan } from "../lib/plan.js";
@@ -57,11 +57,12 @@ export default function permissions(pi: ExtensionAPI) {
     const marker = ctx.sessionManager.getEntries().filter((e) => e.type === "custom" && e.customType === PLAN_ENTRY).at(-1);
     // Delegation is allowed through; the subagent enforces the same limits itself.
     const delegating = isDelegationTool(event.toolName, tools);
+    const asking = isUserQuestionTool(event.toolName, tools);
     if (isPlanning((marker as { data?: Plan } | undefined)?.data) && !canPlanRead(event.toolName, tools)
-      && !isWorkspaceBookkeeping(event.toolName, event.input, tools) && !delegating) {
+      && !isWorkspaceBookkeeping(event.toolName, event.input, tools) && !delegating && !asking) {
       return { block: true, terminate: true, reason: `Plan mode: ${event.toolName} is blocked until /plan execute.` };
     }
-    const decision = isWorkspaceBookkeeping(event.toolName, event.input, tools) ? "allow"
+    const decision = asking || isWorkspaceBookkeeping(event.toolName, event.input, tools) ? "allow"
       : delegating && mode === "read-only" ? "allow" : permissionDecision(mode, event.toolName, tools);
     if (decision === "allow" && !signal.aborted) return;
     const blocked = (reason: string) => ({ block: true, terminate: true, reason });

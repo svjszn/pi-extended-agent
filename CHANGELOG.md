@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the `ask_user` tool with a shared question screen: single/multiple choice, recommended options, written answers and extra details, mouse/keyboard navigation, and review before sending. Serialize questions with permission dialogs, cancel stale requests on abort/session replacement, and allow only the origin-verified question tool through read-only and planning guards without granting execution approval.
+
 - Show elapsed run time and generated output tokens beside Working. Include streamed reasoning and tool arguments, mark live estimates with `~` until provider usage arrives, and reset counters when a run settles or the session changes. Preserve native status messages, effort and update labels, and narrow layouts.
 
 ## 1.3.0

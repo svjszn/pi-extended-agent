@@ -42,6 +42,7 @@ try {
   assert.equal(commands.includes("perf"), false, "Installed package registered a development command");
   assert.equal(session.extensionRunner.getCommand("perf"), undefined);
   assert.ok(loader.getExtensions().extensions.some(extension => extension.tools.has("task")));
+  assert.ok(loader.getExtensions().extensions.some(extension => extension.tools.has("ask_user")));
   await session.prompt("/agents list");
   // Exercise the production CLI loader as well as the unbundled SDK path.
   const bundled = await import(pathToFileURL(join(runtime.packageDir, "dist/bundle/index.js")).href) as typeof import("@earendil-works/pi-coding-agent");
@@ -52,11 +53,15 @@ try {
   for (const extension of cliLoader.getExtensions().extensions) assert.equal(extension.commands.has("perf"), false);
   assert.equal(cliLoader.getExtensions().extensions.length, JSON.parse(readFileSync(join(installed, "package.json"), "utf8")).pi.extensions.length);
   assert.ok(cliLoader.getExtensions().extensions.some(extension => extension.commands.has("agents") && extension.tools.has("task")));
+  assert.ok(cliLoader.getExtensions().extensions.some(extension => extension.tools.has("ask_user")));
   session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "release-smoke", name: "codemode", arguments: {} }],
     api: "test", provider: "test", model: "test", stopReason: "toolUse", timestamp: Date.now(),
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0} } });
   const tools = session.extensionRunner.createToolContext("release-smoke", undefined);
   const call = (name: string, args: unknown) => tools.executeTool(name, args);
+  const question = await call("ask_user", { questions: [{ id: "release", title: "Release", question: "No interactive answer in print mode." }] });
+  assert.equal(question.isError, false);
+  assert.match(JSON.stringify(question), /unavailable/);
   const missingAgent = await call("task", { agent: "missing-release-agent", task: "Do not contact a provider." });
   assert.equal(missingAgent.isError, true);
   assert.match(JSON.stringify(missingAgent), /Unknown subagent/);

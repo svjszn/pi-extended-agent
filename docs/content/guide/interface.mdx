@@ -24,6 +24,25 @@ usage yet; reported output usage replaces that estimate when available.
 The timer includes tool work and retries. Both counters reset for the next run.
 Narrow terminals shorten or hide the details to keep the status and effort readable.
 
+## Questions from the Agent
+
+When a decision needs your input, the agent can open a question screen with the
+`ask_user` tool. It can ask up to four questions together, with short descriptions,
+recommended choices, multiple selection, or a written answer.
+
+Use Up/Down to focus an option and Enter to continue. For multiple selection,
+press Space or an option's number to toggle it. You can also click an option.
+Start typing to write your own answer or add details to a selection. Tab and
+Shift+Tab move between questions while keeping your answers. Review them and
+press Enter on **Send answers** to return them to the agent. Escape cancels
+without sending partial answers.
+
+Questions work in auto, code, and plan modes, including read-only permissions.
+Answering a question does not grant tool permissions or approve a plan; plan
+execution still requires `/plan execute`. Questions share the dialog queue with
+permission requests. Print/RPC mode reports the screen as unavailable and collects
+no answer. Subagents do not receive this tool.
+
 ## Resume a Chat
 
 Run either command from your terminal:
