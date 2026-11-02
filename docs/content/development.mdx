@@ -20,6 +20,16 @@ and checks for contributors and coding agents. TypeScript source compiles to
 `dist/`, which is ignored by Git and included in the npm artifact. Edit source
 files rather than generated JavaScript or upstream packages.
 
+All test suites and `scripts/package-smoke.ts` use TypeScript. `npm run check` validates
+them with `tsconfig.test.json`, and Node 22.19+ runs them using built-in type
+stripping. Their runtime imports still point to the compiled `dist/` modules;
+source type imports provide the checked contracts. After building, run the
+focused tests with:
+
+```sh
+node scripts/run-tests.mjs test/agents.test.ts test/agents-extension.test.ts test/session-interface.test.ts
+```
+
 The project uses Pi's extension API and a small set of isolated private
 interface adapters. Engine compatibility checks must be updated when those
 adapters change.

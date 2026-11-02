@@ -1,12 +1,15 @@
+import { tuiFixture } from "./helpers.ts";
+import { present } from "./helpers.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bundledRuntime } from "../dist/bin/runtime.js";
-import { verifyRuntime } from "../dist/bin/verify-runtime.js";
+const { bundledRuntime } = await import(new URL("../dist/bin/runtime.js", import.meta.url).href) as typeof import("../bin/runtime.js");
+const { verifyRuntime } = await import(new URL("../dist/bin/verify-runtime.js", import.meta.url).href) as typeof import("../bin/verify-runtime.js");
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { startupAuthNotice } from "../dist/lib/startup.js";
+const { hasModel, startupAuthNotice } = await import(new URL("../dist/lib/startup.js", import.meta.url).href) as typeof import("../lib/startup.js");
 import { captureCommand } from "../scripts/capture-command.mjs";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import { createRequire } from "node:module";
 
 test("launcher delegates model selection to the active engine and forwards explicit choices", (t) => {
   const root = fileURLToPath(new URL("../", import.meta.url));
@@ -28,7 +31,7 @@ test("launcher delegates model selection to the active engine and forwards expli
   const bundleDir = join(packageDir, "dist/bundle");
   mkdirSync(bundleDir, { recursive: true });
   writeFileSync(join(bundleDir, "index.js"), `
-    export class InteractiveMode { createBaseAutocompleteProvider() {} setupEditorSubmitHandler() {} showSettingsSelector() {} createExtensionUIContext() {} showModelSelector() {} disposeActiveSelector() {} showSelector() {} showLoginDialog() {} showApiKeyLoginDialog() {} showAmbientAuthDialog() {} }
+    export class InteractiveMode { createBaseAutocompleteProvider() {} setupEditorSubmitHandler() {} showSettingsSelector() {} createExtensionUIContext() {} showWarning() {} showModelSelector() {} disposeActiveSelector() {} showSelector() {} showLoginDialog() {} showApiKeyLoginDialog() {} showAmbientAuthDialog() {} resetExtensionUI() {} setExtensionHeader() {} setExtensionFooter() {} setCustomEditorComponent() {} }
     export class ExtensionRunner { getRegisteredCommands() {} getCommand() {} }
     export class AgentSession { async prompt() {} }
   `);
@@ -98,19 +101,69 @@ test("the actual launcher loads compiled extensions without importing a second S
 
 test("startup reports missing provider auth without reading or refreshing credentials", () => {
   let configured = false;
-  const ctx = { model: { provider: "openai-codex" }, modelRegistry: {
+  const ctx = { model: { provider: "openai-codex" } as { provider: string; id?: string; name?: string; api?: string; contextWindow?: number } | undefined, modelRegistry: {
     getProviderAuthStatus: () => ({ configured }),
-    getProviderDisplayName: (id) => id,
+    getProviderDisplayName: (id: string) => id,
     getApiKeyAndHeaders() { assert.fail("startup must not resolve credentials"); },
   } };
-  assert.match(startupAuthNotice(ctx), /\/login openai-codex.*ChatGPT/);
+  assert.match(startupAuthNotice((ctx as unknown as Parameters<typeof startupAuthNotice>[0]))!, /\/login openai-codex.*ChatGPT/);
   configured = true;
-  assert.equal(startupAuthNotice(ctx), undefined);
+  assert.equal(startupAuthNotice((ctx as unknown as Parameters<typeof startupAuthNotice>[0])), undefined);
   configured = false;
-  ctx.model.provider = "anthropic";
-  assert.match(startupAuthNotice(ctx), /\/login anthropic.*Claude/);
-  ctx.model = undefined;
-  assert.match(startupAuthNotice(ctx), /No model selected.*\/login/);
+  ctx.model!.provider = "anthropic";
+  assert.match(startupAuthNotice((ctx as unknown as Parameters<typeof startupAuthNotice>[0]))!, /\/login anthropic.*Claude/);
+  // An unauthenticated session has no model, or Pi's placeholder one. Both read
+  // the same way, and neither exposes the placeholder's "unknown" fields.
+  for (const model of [undefined, { id: "unknown", name: "unknown", api: "unknown", provider: "unknown", contextWindow: 0 }]) {
+    ctx.model = model;
+    assert.match(startupAuthNotice((ctx as unknown as Parameters<typeof startupAuthNotice>[0]))!, /No models available.*\/login/);
+    assert.equal(hasModel(model), false);
+  }
+  assert.equal(hasModel({ provider: "anthropic", api: "anthropic-messages" }), true);
+  // A stub without provider metadata still counts as a selected model.
+  assert.equal(hasModel({ id: "gpt-6.1-sol" } as Parameters<typeof hasModel>[0]), true);
+});
+
+test("an unauthenticated start shows one plain notice, without effort, context, or a duplicate warning", async () => {
+  const { createHeader, createFooter } = await import(new URL("../dist/ui/chrome.js", import.meta.url).href) as typeof import("../ui/chrome.js");
+  const { createEscapeExitEditor } = await import(new URL("../dist/ui/escape-exit.js", import.meta.url).href) as typeof import("../ui/escape-exit.js");
+  const { createUiTheme } = await import(new URL("../dist/ui/theme.js", import.meta.url).href) as typeof import("../ui/theme.js");
+  const measure = await import(pathToFileURL(createRequire(import.meta.resolve("@earendil-works/pi-coding-agent"))
+    .resolve("@earendil-works/pi-tui")).href) as typeof import("@earendil-works/pi-tui");
+  const placeholder = { id: "unknown", name: "unknown", api: "unknown", provider: "unknown", contextWindow: 0 };
+  const ctx = { model: placeholder, modelRegistry: { getProviderAuthStatus: () => ({ configured: false }), getProviderDisplayName: (id: string) => id } };
+  // The header reports the state once, and never as "unknown with off effort".
+  const header = createHeader({ mode: "regular" }, measure, { version: "1.4.0", getModel: () => placeholder,
+    getThinkingLevel: () => "off", getCwd: () => ".", getAuthNotice: () => startupAuthNotice((ctx as unknown as Parameters<typeof startupAuthNotice>[0])) });
+  const rendered = measure.stripTerminalSequences(header.render(80).join("\n"));
+  header.dispose();
+  assert.match(rendered, /No model selected/);
+  assert.doesNotMatch(rendered, /unknown/);
+  assert.doesNotMatch(rendered, /off effort/);
+  assert.equal(rendered.match(/No models available/g)!.length, 1);
+  // The footer drops the context readout when there is no window to report.
+  const footer = createFooter({}, {}, createUiTheme(), {}, measure, () => undefined, () => "full");
+  assert.doesNotMatch(measure.stripTerminalSequences(footer.render(80).join("\n")), /context/);
+  assert.match(measure.stripTerminalSequences(footer.render(80).join("\n")), /auto mode/);
+  // The input corner keeps no row for an effort level that does not exist.
+  class Base {
+    focused = false;
+    setPaddingX() {}
+    render(width: number) { return ["─".repeat(width), "> ", "─".repeat(width)]; }
+    handleInput() {}
+    renderTopBorder() { return ""; }
+    setWorkingStatusIndicator() {}
+  }
+  const idle = { isIdle: () => true, hasPendingMessages: () => false };
+  const Editor = createEscapeExitEditor(Base as unknown as Parameters<typeof createEscapeExitEditor>[0], measure.matchesKey, idle, { getLevel: () => "", step() {} }, () => {});
+  const editor = new Editor(tuiFixture({ requestRender() {} }), {} as import("@earendil-works/pi-tui").EditorTheme, {} as import("@earendil-works/pi-coding-agent").KeybindingsManager);
+  (editor as unknown as { tui: object }).tui = { requestRender() {} };
+  assert.equal(editor.render(80).length, 3, "no blank row above the input without an effort level");
+  const WithEffort = createEscapeExitEditor(Base as unknown as Parameters<typeof createEscapeExitEditor>[0], measure.matchesKey, idle, { getLevel: () => "medium", step() {} }, () => {});
+  const withEffort = new WithEffort(tuiFixture({ requestRender() {} }), {} as import("@earendil-works/pi-tui").EditorTheme, {} as import("@earendil-works/pi-coding-agent").KeybindingsManager);
+  (withEffort as unknown as { tui: object }).tui = { requestRender() {} };
+  assert.equal(withEffort.render(80).length, 4);
+  assert.match(measure.stripTerminalSequences(withEffort.render(80)[0]), /medium/);
 });
 
 test("built extensions and interface load against the bundled Pi engine", async () => {

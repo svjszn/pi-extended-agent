@@ -1,7 +1,7 @@
 import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { ACCENT_COLORS, AppearanceStore, getAppearance, setAppearance } from "../lib/appearance.js";
+import { ACCENT_COLORS, AppearanceStore, getAppearance, rememberAppearanceTheme, setAppearance } from "../lib/appearance.js";
 import type { Appearance } from "../lib/appearance.js";
 import { nativeAppearanceTheme } from "../ui/appearance.js";
 
@@ -13,8 +13,10 @@ export default function appearanceCommands(pi: ExtensionAPI, store = new Appeara
     if (ctx.mode !== "tui") return;
     try {
       const value = store.read();
-      const result = ctx.ui.setTheme(nativeAppearanceTheme(ctx.ui, value));
+      const themed = nativeAppearanceTheme(ctx.ui, value);
+      const result = ctx.ui.setTheme(themed);
       if (!result.success) throw new Error(result.error ?? "Could not apply appearance.");
+      rememberAppearanceTheme(themed);
       setAppearance(value);
     } catch (error) { notify(ctx, error instanceof Error ? error.message : String(error), "error"); }
   });
@@ -59,8 +61,10 @@ export default function appearanceCommands(pi: ExtensionAPI, store = new Appeara
         const previousTheme = ctx.ui.theme;
         try {
           if (ctx.mode === "tui") {
-            const result = ctx.ui.setTheme(nativeAppearanceTheme(ctx.ui, next));
+            const themed = nativeAppearanceTheme(ctx.ui, next);
+            const result = ctx.ui.setTheme(themed);
             if (!result.success) throw new Error(result.error ?? "Could not apply appearance.");
+            rememberAppearanceTheme(themed);
           }
           store.write(next);
           setAppearance(next);

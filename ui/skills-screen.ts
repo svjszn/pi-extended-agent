@@ -24,6 +24,7 @@ interface SkillsOptions {
   initialQuery?: string; projectTrusted: boolean; projectPath: string; globalPath: string;
   services: {
     installed(): InstalledSkill[];
+    setEnabled?(item: InstalledSkill, enabled: boolean): Promise<void>;
     search(query: string, signal: AbortSignal): Promise<CatalogSkill[]>;
     preview(item: CatalogSkill, signal: AbortSignal): Promise<SkillPreview>;
     previewInstalled(item: InstalledSkill, signal: AbortSignal): Promise<InstalledPreview>;
@@ -44,6 +45,7 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
   let lifetime: AbortSignal, timer: ReturnType<typeof setTimeout> | undefined;
   let searchRequest: AbortController | undefined, previewRequest: AbortController | undefined, installRequest: AbortController | undefined;
   let controls: PanelControls | undefined, closeAfterCancel = false, pending = Promise.resolve(), disposed = false;
+  let changed = false, saving = false;
   const repaint = () => { if (!disposed) tui.requestRender(); };
   const linked = (controller: AbortController) => AbortSignal.any([lifetime, controller.signal]);
   const existing = (item: { name: string; skillId?: string }) => state.installed.find((entry) => entry.name === (item.skillId || item.name));
@@ -57,6 +59,22 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
     controls?.reveal(4 + state.selected * 3);
     repaint();
   };
+
+  async function toggle() {
+    const item = items()[state.selected];
+    if (!item?.installed || !services.setEnabled || saving) return;
+    const enabled = item.enabled === false;
+    saving = true;
+    state.notice = "Saving skill settings…";
+    repaint();
+    try {
+      await services.setEnabled(item, enabled);
+      changed = true;
+      state.installed = services.installed();
+      state.notice = `${skillText(item.name)} ${enabled ? "enabled" : "disabled"}. Changes apply when you close this screen.`;
+    } catch (error) { state.notice = skillText(errorMessage(error)); }
+    finally { saving = false; repaint(); }
+  }
 
   async function search() {
     clearTimeout(timer);
@@ -125,7 +143,7 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
       if (!disposed) {
         state.notice = request.signal.aborted ? "Installation cancelled." : skillText(errorMessage(error));
         state.phase = "detail";
-        if (closeAfterCancel) { controls?.close(false); return; }
+        if (closeAfterCancel) { controls?.close(changed); return; }
       }
     }
     repaint();
@@ -160,7 +178,7 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
     const tabs = ["installed", "search"].map((tab) => state.tab === tab ? label(tab === "installed" ? "Installed" : "Search")
       : muted(tab === "installed" ? "Installed" : "Search")).join("    ");
     const status = state.notice || (state.tab === "search" && state.searching ? "Searching skills.sh…" : state.tab === "installed"
-      ? `${list.length} ${list.length === 1 ? "skill" : "skills"} available to this session` : `${list.length} ${list.length === 1 ? "result" : "results"} from skills.sh`);
+      ? `${list.length} installed · ${state.installed.filter((item) => item.enabled !== false).length} enabled · Space to toggle` : `${list.length} ${list.length === 1 ? "result" : "results"} from skills.sh`);
     const lines = [tabs, "", muted(status), ""];
     if (!list.length) {
       lines.push(muted(state.tab === "installed" ? "No matching installed skills." : inputs.search.getValue().trim().length < 2
@@ -169,10 +187,11 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
     for (const [index, item] of list.entries()) {
       const selected = index === state.selected;
       const installed = item.installed || existing(item);
-      const marker = theme.fg(installed ? "primary" : "dim", installed ? "●" : "○");
+      const enabled = installed && (item.installed ? item.enabled !== false : existing(item)?.enabled !== false);
+      const marker = theme.fg(enabled ? "primary" : "dim", enabled ? "●" : "○");
       const name = skillText(item.name);
       lines.push(measure.truncateToWidth(`${marker} ${selected ? label(name) : theme.fg("text", name)}`, width),
-        measure.truncateToWidth(muted(`  ${item.installed ? `${item.scope} · ${item.filePath}` : `${item.source} · ${compact(item.installs)} installs`}`), width),
+        measure.truncateToWidth(muted(`  ${item.installed ? `${item.enabled === false ? "Disabled" : "Enabled"} · ${item.scope} · ${item.filePath}` : `${item.source} · ${compact(item.installs)} installs`}`), width),
         measure.truncateToWidth(muted(item.description ? `  ${item.description}` : ""), width));
     }
     return lines;
@@ -183,7 +202,7 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
       const lines = renderFooter?.(width) || [];
       if (!lines.length) return lines;
       const last = lines[lines.length - 1];
-      const hint = state.phase === "list" ? "↑↓ select   enter preview   tab switch" : "↑↓ scroll   esc back";
+      const hint = state.phase === "list" ? "↑↓ select   space toggle   enter preview   tab switch" : "↑↓ scroll   esc back";
       const gap = width - measure.visibleWidth(last) - measure.visibleWidth(hint) - 2;
       return gap >= 3 ? [...lines.slice(0, -1), last + " ".repeat(gap) + theme.fg("dim", hint)] : lines;
     },
@@ -206,18 +225,19 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
     onInput(data, actions) {
       controls = actions;
       const key = (name: KeyId) => measure.matchesKey(data, name);
+      if (saving) return true;
       if (state.phase === "installing") {
         if (key("escape") || key("ctrl+c")) {
           closeAfterCancel = key("ctrl+c"); installRequest?.abort(); state.notice = "Cancelling…"; repaint();
         }
         return true;
       }
-      if (key("ctrl+c")) { actions.close(state.phase === "success"); return true; }
+      if (key("ctrl+c")) { actions.close(changed || state.phase === "success"); return true; }
       if (key("escape")) {
         if (state.phase === "detail" || state.phase === "loading") {
           previewRequest?.abort(); state.phase = "list"; state.notice = ""; actions.resetScroll(); repaint();
           actions.reveal(4 + state.selected * 3);
-        } else actions.close(state.phase === "success");
+        } else actions.close(changed || state.phase === "success");
         return true;
       }
       if (state.phase === "success") { if (key("enter")) actions.close(true); return true; }
@@ -240,6 +260,7 @@ export function createSkillsScreen({ tui, theme, measure, Input, done, renderHea
         else if (inputs.search.getValue().trim().length >= 2 && state.searched !== inputs.search.getValue().trim()) pending = search();
         repaint(); return true;
       }
+      if (state.tab === "installed" && data === " " && services.setEnabled) { pending = toggle(); return true; }
       if (key("up") || key("down")) { move(key("up") ? -1 : 1); return true; }
       if (key("pageUp") || key("pageDown")) { move((key("pageUp") ? -1 : 1) * Math.max(1, Math.floor(actions.pageSize / 3))); return true; }
       if (key("enter")) {

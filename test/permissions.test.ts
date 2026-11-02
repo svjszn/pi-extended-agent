@@ -1,37 +1,41 @@
+import type { CustomUi, Panel } from "./helpers.ts";
+import type { ExtensionCommandContext, ExtensionUIContext, ToolInfo } from "@earendil-works/pi-coding-agent";
+import { present } from "./helpers.ts";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import permissions from "../dist/extensions/permissions.js";
-import { permissionDecision, permissionRequest, readPermissionMode, PERMISSIONS_ENTRY } from "../dist/lib/permissions.js";
-import { createPermissionApprovalScreen } from "../dist/ui/permissions-screen.js";
-import { createUiTheme } from "../dist/ui/theme.js";
-import { createFooter } from "../dist/ui/chrome.js";
+const { default: permissions } = await import(new URL("../dist/extensions/permissions.js", import.meta.url).href) as typeof import("../extensions/permissions.js");
+const { permissionDecision, permissionRequest, readPermissionMode, PERMISSIONS_ENTRY } = await import(new URL("../dist/lib/permissions.js", import.meta.url).href) as typeof import("../lib/permissions.js");
+const { createPermissionApprovalScreen } = await import(new URL("../dist/ui/permissions-screen.js", import.meta.url).href) as typeof import("../ui/permissions-screen.js");
+const { createUiTheme } = await import(new URL("../dist/ui/theme.js", import.meta.url).href) as typeof import("../ui/theme.js");
+const { createFooter } = await import(new URL("../dist/ui/chrome.js", import.meta.url).href) as typeof import("../ui/chrome.js");
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 const require = createRequire(import.meta.resolve("@earendil-works/pi-coding-agent"));
-const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")));
-const tools = ["read", "find", "grep", "ls", "edit", "write", "bash", "powershell"].map((name) => ({
-  name, sourceInfo: { path: `builtin:${name}`, source: "builtin" },
+const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href) as typeof import("@earendil-works/pi-tui");
+const tools: Pick<ToolInfo, "name" | "sourceInfo">[] = ["read", "find", "grep", "ls", "edit", "write", "bash", "powershell"].map((name) => ({
+  name, sourceInfo: { path: `builtin:${name}`, source: "builtin", scope: "user", origin: "top-level" },
 }));
-const event = (name) => ({ type: "tool_call", toolName: name, toolCallId: "test", input: { path: "sample.txt" } });
-function fixture(entries = []) {
-  const handlers = new Map(), notices = [], stored = [...entries], bus = [];
-  let command;
+const event = (name: string) => ({ type: "tool_call", toolName: name, toolCallId: "test", input: { path: "sample.txt" } });
+function fixture(entries: {type: string; customType: string; data: unknown}[] = []) {
+  const handlers = new Map(), notices: {message:string;type?:string}[] = [], stored = [...entries], bus: {name:string;data:unknown}[] = [];
+  let command!: Parameters<ExtensionAPI["registerCommand"]>[1];
   const pi = {
-    on: (name, handler) => handlers.set(name, handler), registerCommand: (_name, handler) => { command = handler; },
+    on: ((name, handler) => { handlers.set(name, handler); return () => {}; }) satisfies ExtensionAPI["on"], registerCommand: ((_name, handler) => { command = handler; }) satisfies ExtensionAPI["registerCommand"],
     getAllTools: () => tools, getThinkingLevel: () => "medium",
-    appendEntry: (customType, data) => stored.push({ type: "custom", customType, data }),
-    events: { emit: (name, data) => bus.push({ name, data }) },
+    appendEntry: (customType: string, data: unknown) => stored.push({ type: "custom", customType, data }),
+    events: { emit: (name: string, data: unknown) => bus.push({ name, data }) },
   };
-  permissions(pi);
-  const ctx = { mode: "print", cwd: "/project", hasUI: false, sessionManager: { getEntries: () => stored },
-    ui: { notify: (message, type) => notices.push({ message, type }), confirm: async () => false } };
+  permissions((pi as unknown as Parameters<typeof permissions>[0]));
+  const ctx = { signal: undefined as AbortSignal | undefined, mode: "print", cwd: "/project", hasUI: false, sessionManager: { getEntries: () => stored },
+    ui: { notify: (message: string, type?: string) => notices.push({ message, type }), custom: undefined as CustomUi | undefined, confirm: (async () => false) as ExtensionUIContext["confirm"] } };
   handlers.get("session_start")({}, ctx);
-  const set = async (mode) => { ctx.hasUI = true; await command.handler(mode, ctx); };
-  return { pi, ctx, handlers, command, stored, notices, bus, set, call: (name) => handlers.get("tool_call")(event(name), ctx) };
+  const set = async (mode: string) => { ctx.hasUI = true; await command.handler(mode, ctx as unknown as ExtensionCommandContext); };
+  return { pi, ctx, handlers, command, stored, notices, bus, set, call: (name: string) => handlers.get("tool_call")(event(name), ctx) };
 }
 
 test("permissions allow only known built-in readers, never shell strings or unverified read-only hints", () => {
@@ -41,7 +45,7 @@ test("permissions allow only known built-in readers, never shell strings or unve
     assert.equal(permissionDecision("ask", name, tools), "confirm");
     assert.equal(permissionDecision("full", name, tools), "allow");
   }
-  const shadow = [{ name: "read", sourceInfo: { source: "local", path: "/extension.js" }, annotations: { readOnlyHint: true } }];
+  const shadow = [{ name: "read", sourceInfo: { source: "local", scope: "project" as const, origin: "top-level" as const, path: "/extension.js" }, annotations: { readOnlyHint: true } }];
   assert.equal(permissionDecision("read-only", "read", shadow), "block");
 });
 
@@ -56,7 +60,7 @@ test("mode changes persist only session metadata, restore on resume, and reject 
   const resumed = fixture(f.stored);
   assert.equal((await resumed.call("bash")).block, true);
   await f.set("invalid");
-  assert.equal(f.notices.at(-1).type, "error");
+  assert.equal(present(f.notices.at(-1)).type, "error");
   assert.equal(f.stored.length, 1);
   assert.equal(readPermissionMode([]), "full");
   assert.equal(fixture().stored.length, 0);
@@ -76,9 +80,9 @@ test("ask mode gates mutations, fails closed without UI, and does not reuse one 
 
 test("concurrent calls are approved in order and a mode change cancels stale approvals", async () => {
   const f = fixture(); await f.set("ask");
-  const pending = [];
-  f.ctx.ui.confirm = (_title, _body, { signal }) => new Promise((resolve) => {
-    pending.push(resolve); signal.addEventListener("abort", () => resolve(false), { once: true });
+  const pending: ((arg0: boolean) => void)[] = [];
+  f.ctx.ui.confirm = (_title, _body, options) => new Promise<boolean>((resolve) => {
+    pending.push(resolve); present(options?.signal).addEventListener("abort", () => resolve(false), { once: true });
   });
   const first = f.call("write"), second = f.call("edit");
   await new Promise(setImmediate); assert.equal(pending.length, 1);
@@ -91,7 +95,7 @@ test("concurrent calls are approved in order and a mode change cancels stale app
 
 test("session shutdown cancels a pending TUI approval without letting the tool execute", async () => {
   const f = fixture(); await f.set("ask"); f.ctx.mode = "tui";
-  let panel;
+  let panel!: Panel;
   f.ctx.ui.custom = (create) => new Promise((resolve) => {
     panel = create({ children: [], terminal: { rows: 24 }, requestRender() {} }, createUiTheme(), {}, resolve);
   });
@@ -135,11 +139,11 @@ test("permissions selector keeps changes pending until Enter and uses the shared
       for (const [width, rows] of [[100, 30], [24, 12], [8, 8], [1, 4]]) {
         tui.terminal.rows = rows;
         const lines = panel.render(width); assert.equal(lines.length, rows);
-        assert.ok(lines.every((line) => measure.visibleWidth(line) <= width));
+        assert.ok(lines.every((line: string) => measure.visibleWidth(line) <= width));
       }
       panel.handleInput(cancel ? "\x1b" : "\r"); panel.dispose(); return result;
     };
-    await f.command.handler("", f.ctx);
+    await present(f.command).handler("", f.ctx as unknown as ExtensionCommandContext);
     assert.equal(readPermissionMode(f.stored), cancel ? "full" : "ask");
   }
 });
@@ -179,7 +183,7 @@ test("approval text bounds a large tool input, keeps its fields visible, and sta
 test("footer reflects the permission mode and keeps context aligned", () => {
   let mode = "full";
   const footer = createFooter({}, {}, createUiTheme(), {}, measure,
-    () => ({ tokens: 24000, contextWindow: 200000, percent: 12 }), () => mode);
+    () => ({ tokens: 24000, contextWindow: 200000, percent: 12, source: "pi", afterCompaction: false }), () => mode as import("../lib/permissions.js").PermissionMode);
   for (const [value, label] of [["full", "auto mode"], ["ask", "ask mode"], ["read-only", "read only"]]) {
     mode = value;
     for (const width of [8, 24, 80]) assert.ok(footer.render(width).every((line) => measure.visibleWidth(line) <= width));
@@ -208,9 +212,9 @@ test("real Pi tool execution enforces permissions before file writes, shell, and
   // making a provider request. Pi requires it for the nested execution pipeline.
   session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "permissions-test", name: "codemode", arguments: {} }],
     api: "test", provider: "test", model: "test", stopReason: "toolUse", timestamp: Date.now(),
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 } });
-  const run = session._extensionRunner.createToolContext("permissions-test");
-  const call = (name, args) => run.executeTool(name, args);
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: {input:0,output:0,cacheRead:0,cacheWrite:0,total:0} } });
+  const run = session.extensionRunner.createToolContext("permissions-test", undefined);
+  const call = (name: string, args: { path?: string; content?: string; oldText?: string; newText?: string; command?: string; }) => run.executeTool(name, args);
   const written = await call("write", { path: "sample.txt", content: "original" });
   assert.equal(written.isError, false, JSON.stringify(written));
   await session.prompt("/permissions read-only");

@@ -6,7 +6,7 @@ import { errorMessage } from "../lib/errors.js";
 
 export default function skillsCommand(pi: ExtensionAPI) {
   pi.registerCommand("skills", {
-    description: "Browse installed skills, search skills.sh, and install a skill",
+    description: "Browse, enable or disable installed skills, search skills.sh, and install a skill",
     handler: async (args, ctx) => {
       const { installedSkills, installSkill, previewInstalledSkill, previewSkill, searchSkills, skillText } = await import("../lib/skills.js");
       const query = args.trim().slice(0, 200);
@@ -22,6 +22,10 @@ export default function skillsCommand(pi: ExtensionAPI) {
         import("../ui/skills-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
       ]);
       const agentDir = getAgentDir();
+      const { skillSettings } = await import("../lib/skill-settings.js");
+      let settings;
+      try { settings = await skillSettings(ctx.cwd, agentDir, ctx.isProjectTrusted(), installedSkills(ctx)); }
+      catch (error) { ctx.ui.notify(errorMessage(error), "error"); return; }
       const reload = await ctx.ui.custom((tui, _theme, _keys, done) => {
         const theme = createUiTheme();
         const measure = { CURSOR_MARKER, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi };
@@ -33,7 +37,8 @@ export default function skillsCommand(pi: ExtensionAPI) {
           renderHeader: (width) => header.render(width), renderFooter: (width) => footer?.render(width),
           projectTrusted: ctx.isProjectTrusted(), projectPath: join(ctx.cwd, ".pi", "skills"), globalPath: join(agentDir, "skills"),
           services: {
-            installed: () => installedSkills(ctx),
+            installed: settings.installed,
+            setEnabled: settings.setEnabled,
             search: (value, signal) => searchSkills(value, { signal }),
             preview: (item, signal) => previewSkill(item, { signal }),
             previewInstalled: previewInstalledSkill,
@@ -42,7 +47,7 @@ export default function skillsCommand(pi: ExtensionAPI) {
         });
       }, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", row: 0, col: 0, margin: 0 } });
       if (reload) {
-        ctx.ui.notify("Skill installed. Reloading skills…", "info");
+        ctx.ui.notify("Skills updated. Reloading skills…", "info");
         await ctx.reload();
         return;
       }

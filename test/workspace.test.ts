@@ -1,3 +1,7 @@
+import type { Plan } from "../lib/plan.js";
+import { present } from "./helpers.ts";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequire } from "node:module";
@@ -5,57 +9,58 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import workspace from "../dist/extensions/workspace.js";
-import permissions from "../dist/extensions/permissions.js";
-import { projectIdentity, projectFiles, StateFiles } from "../dist/lib/project-state.js";
-import { MemoryStore, memoryPrompt } from "../dist/lib/memory.js";
-import { PlanStore, renderPlan, parsePlan, PLAN_ENTRY, PLAN_TOGGLE } from "../dist/lib/plan.js";
-import { PromptStore, sessionPrompt } from "../dist/lib/prompt.js";
-import { isWorkspaceBookkeeping } from "../dist/lib/workspace-tools.js";
-import { readPermissionMode } from "../dist/lib/permissions.js";
-import { createWorkspaceScreen, createWorkspaceEditor } from "../dist/ui/workspace-screen.js";
-import { createUiTheme } from "../dist/ui/theme.js";
+const { default: workspace } = await import(new URL("../dist/extensions/workspace.js", import.meta.url).href) as typeof import("../extensions/workspace.js");
+const { default: permissions } = await import(new URL("../dist/extensions/permissions.js", import.meta.url).href) as typeof import("../extensions/permissions.js");
+const { projectIdentity, projectFiles, StateFiles } = await import(new URL("../dist/lib/project-state.js", import.meta.url).href) as typeof import("../lib/project-state.js");
+const { MemoryStore, memoryPrompt } = await import(new URL("../dist/lib/memory.js", import.meta.url).href) as typeof import("../lib/memory.js");
+const { validatePlan, PlanStore, renderPlan, parsePlan, PLAN_ENTRY, PLAN_TOGGLE } = await import(new URL("../dist/lib/plan.js", import.meta.url).href) as typeof import("../lib/plan.js");
+const { PromptStore, sessionPrompt } = await import(new URL("../dist/lib/prompt.js", import.meta.url).href) as typeof import("../lib/prompt.js");
+const { isWorkspaceBookkeeping } = await import(new URL("../dist/lib/workspace-tools.js", import.meta.url).href) as typeof import("../lib/workspace-tools.js");
+const { readPermissionMode } = await import(new URL("../dist/lib/permissions.js", import.meta.url).href) as typeof import("../lib/permissions.js");
+const { createWorkspaceScreen, createWorkspaceEditor } = await import(new URL("../dist/ui/workspace-screen.js", import.meta.url).href) as typeof import("../ui/workspace-screen.js");
+const { createUiTheme } = await import(new URL("../dist/ui/theme.js", import.meta.url).href) as typeof import("../ui/theme.js");
 
 const require = createRequire(import.meta.resolve("@earendil-works/pi-coding-agent"));
-const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")));
-function directory(t) {
+const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href) as typeof import("@earendil-works/pi-tui");
+function directory(t: TestContext) {
   const base = resolve(".local/workspace-tests"); mkdirSync(base, { recursive: true });
   const cwd = mkdtempSync(join(base, "project-"));
   t.after(() => { const path = resolve(cwd); assert.ok(path.startsWith(base + sep)); rmSync(path, { recursive: true, force: true }); });
   return cwd;
 }
-const emptyPlan = { version: 1, status: "planning", goal: "Build feature", steps: [], areas: [], checks: [], updatedAt: "" };
+const emptyPlan: Plan = { version: 1, status: "planning", goal: "Build feature", steps: [], areas: [], checks: [], updatedAt: "" };
 const note = { id: "preferences", title: "User preferences", summary: "Use concise Russian replies", content: "The user prefers concise replies in Russian.\nDetails loaded only on demand." };
-function fixture(t, options = {}) {
+type FixtureEntry = { type: string; customType?: string; data?: unknown };
+function fixture(t: TestContext, options: { cwd?: string; entries?: FixtureEntry[]; sessionId?: string } = {}) {
   const cwd = options.cwd ?? directory(t), agentDir = join(cwd, "profile");
   const previous = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = agentDir;
   t.after(() => { if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous; });
-  const handlers = new Map(), commands = new Map(), tools = new Map(), entries = options.entries ?? [], sent = [], notices = [];
+  const handlers = new Map(), commands = new Map(), tools = new Map(), entries = options.entries ?? [], sent: {text: string; options?: unknown}[] = [], notices: {text: string; type?: string}[] = [];
   const listeners = new Map();
   let active = ["read", "write", "edit", "bash", "project_memory", "update_plan"];
-  const pi = { on: (name, handler) => handlers.set(name, handler), registerCommand: (name, command) => commands.set(name, command),
-    registerTool: (tool) => tools.set(tool.name, tool), appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
-    sendUserMessage: (text, options) => sent.push({ text, options }), events: {
-      emit(name, data) { for (const fn of listeners.get(name) ?? []) fn(data); },
-      on(name, fn) { const set = listeners.get(name) ?? new Set(); set.add(fn); listeners.set(name, set); return () => set.delete(fn); },
+  const pi = { on: ((name, handler) => { handlers.set(name, handler); return () => {}; }) satisfies ExtensionAPI["on"], registerCommand: ((name, command) => commands.set(name, command)) satisfies ExtensionAPI["registerCommand"],
+    registerTool: ((tool) => tools.set(tool.name, tool)) satisfies ExtensionAPI["registerTool"], appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
+    sendUserMessage: (text: string, options?: unknown) => sent.push({ text, options }), events: {
+      emit(name: string, data?: unknown) { for (const fn of listeners.get(name) ?? []) fn(data); },
+      on(name: string, fn: (data: unknown) => void) { const set = listeners.get(name) ?? new Set(); set.add(fn); listeners.set(name, set); return () => set.delete(fn); },
     }, getThinkingLevel: () => "medium",
-    getActiveTools: () => active, setActiveTools: (names) => { active = names; },
+    getActiveTools: () => active, setActiveTools: (names: string[]) => { active = names; },
     getAllTools: () => [
-      ...["read", "find", "grep", "ls", "write", "edit", "bash"].map((name) => ({ name, sourceInfo: { source: "builtin", path: `builtin:${name}` } })),
-      ...["project_memory", "update_plan"].map((name) => ({ name, sourceInfo: { source: "local", path: fileURLToPath(new URL("../dist/extensions/workspace.js", import.meta.url)) } })),
+      ...["read", "find", "grep", "ls", "write", "edit", "bash"].map((name) => ({ name, sourceInfo: {scope: "user" as const, origin: "top-level" as const,  source: "builtin", path: `builtin:${name}` } })),
+      ...["project_memory", "update_plan"].map((name) => ({ name, sourceInfo: {scope: "user" as const, origin: "top-level" as const,  source: "local", path: fileURLToPath(new URL("../dist/extensions/workspace.js", import.meta.url)) } })),
     ],
   };
   const ctx = { cwd, mode: "print", hasUI: true, isIdle: () => true, hasPendingMessages: () => false,
     sessionManager: { getSessionId: () => options.sessionId ?? "session-one", getEntries: () => entries },
     getSystemPrompt: () => "Native baseline", getSystemPromptOptions: () => ({ cwd, contextFiles: [], skills: [] }),
-    ui: { notify: (text, type) => notices.push({ text, type }), editor: async (_title, text) => text },
+    ui: { notify: (text: string, type?: string) => notices.push({ text, type }), editor: async (_title: string, text: string) => text },
   };
-  workspace(pi); handlers.get("session_start")({}, ctx);
+  workspace((pi as unknown as Parameters<typeof workspace>[0])); handlers.get("session_start")({}, ctx);
   return { cwd, agentDir, pi, ctx, entries, sent, notices, handlers, commands, tools,
-    command: (name, args = "") => commands.get(name).handler(args, ctx),
-    tool: (name, args) => tools.get(name).execute("test", args, undefined, undefined, ctx),
-    call: (name, input = {}) => handlers.get("tool_call")({ toolName: name, input }, ctx),
-    store: new MemoryStore(projectFiles(cwd, agentDir)),
+    command: (name: string, args = "") => commands.get(name).handler(args, ctx),
+    tool: (name: string, args: unknown = {}) => tools.get(name).execute("test", args, undefined, undefined, ctx),
+    call: (name: string, input = {}) => handlers.get("tool_call")({ toolName: name, input }, ctx),
+    store: new MemoryStore(projectFiles(cwd, agentDir)), plan: () => validatePlan(present(entries.at(-1)).data),
   };
 }
 
@@ -77,7 +82,7 @@ test("memory upserts persistent topics, keeps details out of the index, and disa
   memory.save(note); memory.save({ ...note, summary: "Updated preference" });
   const resumed = new MemoryStore(files);
   assert.equal(resumed.list().length, 1); assert.equal(resumed.read(note.id).summary, "Updated preference");
-  assert.match(files.read("memory/MEMORY.md"), /Updated preference/);
+  assert.match(present(files.read("memory/MEMORY.md")), /Updated preference/);
   assert.doesNotMatch(memoryPrompt(resumed), /Details loaded only on demand/);
   resumed.enabled = false;
   assert.doesNotMatch(memoryPrompt(resumed), /Updated preference/);
@@ -130,8 +135,8 @@ test("a damaged note is reported without hiding other memories or blocking the i
     assert.throws(() => memory.read(id), new RegExp(`Memory ${id} could not be read[\\s\\S]*/memory delete ${id}`));
   }
   memory.save({ ...note, id: "architecture", summary: "Updated while damaged" });
-  assert.match(files.read("memory/MEMORY.md"), /Updated while damaged/);
-  assert.match(files.read("memory/MEMORY.md"), /broken, huge/);
+  assert.match(present(files.read("memory/MEMORY.md")), /Updated while damaged/);
+  assert.match(present(files.read("memory/MEMORY.md")), /broken, huge/);
   memory.delete("broken");
   assert.deepEqual(memory.entries().unreadable, ["huge"]);
   assert.equal(memory.list().length, 2);
@@ -165,18 +170,18 @@ test("prompt scopes persist independently and compose without replacing the Pi b
   assert.equal(prompts.read("global"), "Be direct."); assert.equal(prompts.read("project"), "Use npm.");
   f.store.save(note);
   for (let i = 0; i < 2; i++) {
-    const event = { systemPrompt: "Native baseline", systemPromptOptions: { sections: { inherited: "Existing instructions" } } };
+    const event = { systemPrompt: "Native baseline", systemPromptOptions: { sections: { inherited: "Existing instructions" } as Record<string, string> } };
     const response = await f.handlers.get("before_agent_start")(event, f.ctx);
     assert.equal(response, undefined); assert.equal(event.systemPrompt, "Native baseline");
     assert.equal(event.systemPromptOptions.sections.inherited, "Existing instructions");
     assert.match(event.systemPromptOptions.sections.pi_extended_workflow, /batch them using available tools/);
     assert.match(event.systemPromptOptions.sections.pi_extended_workflow, /Run required validation/);
-    assert.equal(event.systemPromptOptions.sections.pi_extended_prompt.match(/Use npm/g).length, 1);
+    assert.equal(event.systemPromptOptions.sections.pi_extended_prompt.match(/Use npm/g)!.length, 1);
     assert.match(event.systemPromptOptions.sections.pi_extended_memory, /preferences/);
     assert.doesNotMatch(event.systemPromptOptions.sections.pi_extended_memory, /Details loaded only on demand/);
   }
   await f.command("memory", "off");
-  const event = { systemPrompt: "Native", systemPromptOptions: { sections: {} } };
+  const event = { systemPrompt: "Native", systemPromptOptions: { sections: {} as Record<string, string> } };
   f.handlers.get("before_agent_start")(event, f.ctx);
   assert.doesNotMatch(event.systemPromptOptions.sections.pi_extended_memory, /Use concise/);
   await assert.rejects(f.tool("project_memory", { action: "read", id: note.id }), /disabled/);
@@ -200,20 +205,20 @@ test("plan barrier blocks every mutation and shell, persists on resume, and exec
   assert.equal(f.handlers.get("user_bash")({}, f.ctx).result.exitCode, 1);
   const proposal = { goal: "Add feature", steps: [{ text: "Inspect code", status: "in_progress" }, { text: "Implement and test", status: "pending" }], areas: ["lib"], checks: ["npm test"] };
   await f.tool("update_plan", proposal);
-  assert.equal(f.entries.at(-1).data.status, "ready"); assert.equal(f.entries.at(-1).data.steps[0].status, "pending");
+  assert.equal(f.plan().status, "ready"); assert.equal(f.plan().steps[0].status, "pending");
   const store = new PlanStore(projectFiles(f.cwd, f.agentDir), "session-one");
-  assert.equal(store.read().status, "ready");
+  assert.equal(present(store.read()).status, "ready");
   // Reload reads the plan from disk, independent of compacted messages.
   await f.handlers.get("session_start")({}, f.ctx);
   assert.equal((await f.call("write")).block, true);
   assert.equal(f.sent.length, 0);
-  const planningPrompt = { systemPrompt: "Native", systemPromptOptions: { sections: {} } };
+  const planningPrompt = { systemPrompt: "Native", systemPromptOptions: { sections: {} as Record<string, string> } };
   f.handlers.get("before_agent_start")(planningPrompt, f.ctx);
   assert.equal(planningPrompt.systemPromptOptions.sections.pi_extended_workflow, undefined);
   assert.doesNotMatch(planningPrompt.systemPromptOptions.sections.pi_extended_plan, /Once the requirements are met/);
   await f.command("plan", "execute");
-  assert.equal(store.read().status, "executing"); assert.equal(await f.call("write"), undefined);
-  const executingPrompt = { systemPrompt: "Native", systemPromptOptions: { sections: {} } };
+  assert.equal(present(store.read()).status, "executing"); assert.equal(await f.call("write"), undefined);
+  const executingPrompt = { systemPrompt: "Native", systemPromptOptions: { sections: {} as Record<string, string> } };
   f.handlers.get("before_agent_start")(executingPrompt, f.ctx);
   assert.equal(executingPrompt.systemPromptOptions.sections.pi_extended_workflow, undefined);
   assert.match(executingPrompt.systemPromptOptions.sections.pi_extended_plan, /Once the requirements are met and required checks pass, finish/);
@@ -222,7 +227,7 @@ test("plan barrier blocks every mutation and shell, persists on resume, and exec
   assert.equal(f.sent.length, 1); assert.match(f.sent[0].text, /approved plan/);
   await assert.rejects(f.tool("update_plan", { goal: "Do something else" }), /approved plan changed/);
   await f.tool("update_plan", { steps: proposal.steps.map((s) => ({ ...s, status: "completed" })) });
-  assert.equal(store.read().status, "completed");
+  assert.equal(present(store.read()).status, "completed");
 });
 
 test("mode shortcut pauses and restores the draft without executing, changing permissions, or duplicating on reload", async (t) => {
@@ -232,29 +237,29 @@ test("mode shortcut pauses and restores the draft without executing, changing pe
   assert.equal((await f.call("write")).block, true);
   await f.tool("update_plan", { goal: "Keep this draft", steps: [{ text: "Inspect project", status: "pending" }] });
   f.pi.events.emit(PLAN_TOGGLE);
-  assert.equal(f.entries.at(-1).data.status, "paused");
+  assert.equal(f.plan().status, "paused");
   assert.equal(await f.call("write"), undefined);
   assert.deepEqual(f.pi.getActiveTools(), originalTools);
   await assert.rejects(f.tool("update_plan", {}), /No active plan/);
-  const event = { systemPrompt: "Native", systemPromptOptions: { sections: {} } };
+  const event = { systemPrompt: "Native", systemPromptOptions: { sections: {} as Record<string, string> } };
   f.handlers.get("before_agent_start")(event, f.ctx);
   assert.equal(event.systemPromptOptions.sections.pi_extended_plan, undefined);
   // One key press must cause one toggle after a session reload.
   f.handlers.get("session_start")({}, f.ctx);
   f.pi.events.emit(PLAN_TOGGLE);
-  assert.equal(f.entries.at(-1).data.status, "ready");
-  assert.equal(f.entries.at(-1).data.goal, "Keep this draft");
+  assert.equal(f.plan().status, "ready");
+  assert.equal(f.plan().goal, "Keep this draft");
   assert.equal((await f.call("write")).block, true);
   assert.equal(f.sent.length, 0);
   assert.equal(readPermissionMode(f.entries), "full");
   f.ctx.isIdle = () => false; f.pi.events.emit(PLAN_TOGGLE);
-  assert.equal(f.entries.at(-1).data.status, "ready");
+  assert.equal(f.plan().status, "ready");
   f.ctx.isIdle = () => true; f.ctx.hasPendingMessages = () => true; f.pi.events.emit(PLAN_TOGGLE);
-  assert.equal(f.entries.at(-1).data.status, "ready");
+  assert.equal(f.plan().status, "ready");
   f.ctx.hasPendingMessages = () => false; f.pi.events.emit(PLAN_TOGGLE);
-  assert.equal(f.entries.at(-1).data.status, "paused");
+  assert.equal(f.plan().status, "paused");
   await f.command("plan", "execute");
-  assert.equal(f.entries.at(-1).data.status, "executing");
+  assert.equal(f.plan().status, "executing");
   assert.equal(f.sent.length, 1);
   f.handlers.get("session_shutdown")();
   const count = f.entries.length; f.pi.events.emit(PLAN_TOGGLE); assert.equal(f.entries.length, count);
@@ -270,9 +275,9 @@ test("plan cannot be approved by a tool, invalid plans stay blocked, and cancell
   files.remove(store.name); f.handlers.get("session_start")({}, f.ctx);
   assert.equal((await f.call("write")).block, true);
   await f.command("plan", "cancel");
-  assert.equal(await f.call("write"), undefined); assert.equal(store.read().status, "cancelled");
+  assert.equal(await f.call("write"), undefined); assert.equal(present(store.read()).status, "cancelled");
   f.ctx.isIdle = () => false; await f.command("plan", "start");
-  assert.equal(store.read().status, "cancelled"); assert.match(f.notices.at(-1).text, /Wait for the current run/);
+  assert.equal(present(store.read()).status, "cancelled"); assert.match(present(f.notices.at(-1)).text, /Wait for the current run/);
 });
 
 test("plan Markdown editing preserves goals, steps, areas and checks while validating statuses", (t) => {
@@ -333,26 +338,26 @@ test("real Pi hooks gate nested tools during planning without changing existing 
   session.setActiveToolsByName(["read", "write", "edit", "bash", "powershell", "project_memory", "update_plan"]);
   session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "workspace-test", name: "codemode", arguments: {} }],
     api: "test", provider: "test", model: "test", stopReason: "toolUse", timestamp: Date.now(),
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 } });
-  const run = session._extensionRunner.createToolContext("workspace-test"), call = (name, args) => run.executeTool(name, args);
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: {input:0,output:0,cacheRead:0,cacheWrite:0,total:0} } });
+  const run = session.extensionRunner.createToolContext("workspace-test", undefined), call = (name: string, args: unknown) => run.executeTool(name, args);
   writeFileSync(join(cwd, "sample.txt"), "original");
   for (const mode of ["full", "ask", "read-only"]) {
     await session.prompt(`/permissions ${mode}`); await session.prompt("/plan start");
     assert.ok(session.getActiveToolNames().includes("ls"));
     // Interactive and RPC shell entry points emit this hook before executeBash.
-    const intercepted = await session._extensionRunner.emitUserBash({ type: "user_bash", command: "echo blocked > marker.txt", cwd, excludeFromContext: false });
+    const intercepted = await session.extensionRunner.emitUserBash({ type: "user_bash", command: "echo blocked > marker.txt", cwd, excludeFromContext: false });
     const userShell = intercepted?.result ?? await session.executeBash("echo blocked > marker.txt");
     assert.equal(userShell.exitCode, 1); assert.match(userShell.output, /Plan mode blocks shell/);
     assert.equal((await call("read", { path: "sample.txt" })).isError, false);
     for (const [name, args] of [["write", { path: "sample.txt", content: "changed" }], ["edit", { path: "sample.txt", oldText: "original", newText: "changed" }],
       ["bash", { command: "echo changed > marker.txt" }], ["powershell", { command: "Set-Content marker.txt changed" }]]) {
-      const outcome = await call(name, args); assert.equal(outcome.isError, true, JSON.stringify(outcome)); assert.match(JSON.stringify(outcome), /Plan mode/);
+      const outcome = await call(name as string, args); assert.equal(outcome.isError, true, JSON.stringify(outcome)); assert.match(JSON.stringify(outcome), /Plan mode/);
     }
     const saved = await call("update_plan", { goal: "Make change", steps: [{ text: "Update sample", status: "pending" }], areas: ["sample.txt"], checks: ["Read result"] });
     assert.equal(saved.isError, false, JSON.stringify(saved));
     await session.prompt("/prompt session Reply in Russian.");
     session.sessionManager.appendCompaction("Compacted conversation", null, 5000);
-    const injected = await session._extensionRunner.emitBeforeAgentStart({ messageType: "user", prompt: "Continue" }, session._baseSystemPromptOptions);
+    const injected = await session.extensionRunner.emitBeforeAgentStart({ messageType: "user", prompt: "Continue" }, session.extensionRunner.createCommandContext().getSystemPromptOptions());
     assert.match(injected.systemPromptOptions.sections.pi_extended_plan, /Make change/);
     assert.match(injected.systemPromptOptions.sections.pi_extended_prompt, /Reply in Russian/);
     assert.ok(injected.systemPromptOptions.sections.pi_extended_memory);
@@ -374,11 +379,11 @@ test("real Pi hooks gate nested tools during planning without changing existing 
   assert.match(JSON.stringify(read), /Details loaded only on demand/);
   // /prompt uses the active engine's own renderer for the unchanged native baseline.
   const beforePreview = session.agent.state.messages.length;
-  const preview = [], originalError = console.error;
+  const preview: string[] = [], originalError = console.error;
   try { console.error = (message) => preview.push(String(message)); await session.prompt("/prompt"); }
   finally { console.error = originalError; }
   assert.match(preview.join("\n"), /expert coding assistant/);
   assert.match(preview.join("\n"), /Use concise Russian replies/);
   assert.equal(session.agent.state.messages.length, beforePreview);
-  assert.equal(isWorkspaceBookkeeping("project_memory", { action: "read" }, [{ name: "project_memory", sourceInfo: { path: "/external.js" } }]), false);
+  assert.equal(isWorkspaceBookkeeping("project_memory", { action: "read" }, [{ name: "project_memory", sourceInfo: {scope: "user" as const, origin: "top-level" as const, source: "local",  path: "/external.js" } }]), false);
 });

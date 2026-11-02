@@ -7,6 +7,8 @@ import { createFooter, createHeader } from "../ui/chrome.js";
 import { createEscapeExitEditor } from "../ui/escape-exit.js";
 import { createCommandPanel } from "../ui/command-panel.js";
 import { createAuthSelectorScreen } from "../ui/auth-screen.js";
+import { captureFlashes } from "./flash-interface.js";
+import { visibleFlash } from "../lib/flash-status.js";
 import { createUiTheme } from "../ui/theme.js";
 import { createChatStyle } from "../ui/chat.js";
 import type { nativeAppearanceTheme as NativeAppearanceTheme } from "../ui/appearance.js";
@@ -17,6 +19,8 @@ import type { ExtensionAPI, ExtensionFactory, ExtensionCommandContext, Keybindin
 import type { readContextReport as ReadContextReport, readContextSummary as ReadContextSummary } from "../lib/context.js";
 import type { readStatus as ReadStatus } from "../lib/status.js";
 import { installCommandPolicy, prepareRuntimeCommands, verifyCommandPolicy } from "./command-policy.js";
+import { keepSessionChrome, verifySessionChrome } from "./chrome-interface.js";
+import type { ChromeRuntimeApi } from "./chrome-interface.js";
 import type { CommandRuntimeApi } from "./command-policy.js";
 
 type PiApi = typeof import("@earendil-works/pi-coding-agent");
@@ -34,13 +38,19 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   const require = createRequire(entry);
   const api = await import(entry.href) as PiApi;
   installCommandPolicy(api as unknown as CommandRuntimeApi);
+  keepSessionChrome(api as unknown as ChromeRuntimeApi);
   const commandApi = await prepareRuntimeCommands(runtime);
   await verifyCommandPolicy(commandApi);
+  // A session replacement must leave this interface mounted on the terminal.
+  verifySessionChrome(api as unknown as ChromeRuntimeApi);
+  verifySessionChrome(commandApi as unknown as ChromeRuntimeApi);
   // Native JS extension imports use this executable's bundled public API, not
   // the wrapper's separately installed SDK. Check deferred command readers too.
   const bundledApi = commandApi as unknown as Record<string, unknown>;
   for (const name of ["getAgentDir", "getPackageDir", "SettingsManager", "CustomEditor", "buildSessionContext",
-    "estimateTokens", "formatSkillsForPrompt", "getLastAssistantUsage", "parseFrontmatter"]) {
+    "estimateTokens", "formatSkillsForPrompt", "getLastAssistantUsage", "parseFrontmatter",
+    // Subagents are built on these supported factories, not on private adapters.
+    "createAgentSessionServices", "createAgentSessionFromServices", "SessionManager", "createCodemodeExtension"]) {
     assert.equal(typeof bundledApi[name], "function", `Missing bundled extension API: ${name}`);
   }
   assert.equal(bundledApi.VERSION, runtime.version, "Bundled extension API version mismatch");
@@ -159,6 +169,18 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     assert.equal(inputLines[0].trim(), "medium", "Runtime hides effort above input");
     assert.equal(inputLines[1], "─".repeat(width), "Runtime breaks full-width input border");
     assert.ok(inputLines[2].startsWith("❯ "), "Runtime hides the input chevron or breaks text alignment");
+    // Copy-on-select confirmations must still reach a flash the corner can take over.
+    assert.equal(typeof (tuiApi as unknown as { TuiAltScreen?: { prototype?: { flash?: unknown } } })
+      .TuiAltScreen?.prototype?.flash, "function", "Pi's alternate screen no longer flashes copy confirmations");
+    const flashHost: { flash?(message: string, durationMs?: number): void } = { flash() {} };
+    const restoreFlashes = captureFlashes(flashHost);
+    assert.ok(restoreFlashes, "Pi no longer exposes the alternate-screen flash stack");
+    flashHost.flash!("Copied!");
+    assert.equal(visibleFlash(80), "Copied!", "Runtime breaks the relocated copy notice");
+    input.setText("");
+    assert.equal(stripTerminalSequences(input.render(width)[0]).trim(), "Copied!", "Runtime hides the relocated copy notice");
+    restoreFlashes!();
+    assert.equal(visibleFlash(80), undefined, "Restoring the flash stack must clear the corner");
     input.dispose();
     let exited = false;
     input.onCtrlD = () => { exited = true; };
@@ -237,7 +259,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     await factory(fakePi as ExtensionAPI);
   }
   assert.ok(!commands.has("perf"), "Development performance command must not ship");
-  for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
+  for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "mode", "theme", "color", "agents", "clear"]) {
     assert.ok(commands.has(name), `Runtime failed to register /${name}`);
   }
 }

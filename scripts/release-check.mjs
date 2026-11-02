@@ -59,10 +59,10 @@ try {
     { cwd: project, env, capture: true, accepted: [0, 1, 2] });
   assert.equal(JSON.parse(auth.stdout).status, "not_ready", "An empty profile unexpectedly has credentials.");
   console.log("Checking installed extensions, permissions, memory, plans, and session resume...");
-  run(process.execPath, [join(root, "scripts", "package-smoke.mjs"), installed, temp], { cwd: project, env });
+  run(process.execPath, [join(root, "scripts", "package-smoke.ts"), installed, temp], { cwd: project, env });
   console.log("Opening installed command views cold and after reload, without network access...");
-  run(process.execPath, [join(root, "test", "command-loading.test.mjs"), "--probe", installed, project], { cwd: project, env });
-  run(process.execPath, [join(root, "test", "command-loading.test.mjs"), "--probe", installed, project, "fail"], { cwd: project, env });
+  run(process.execPath, [join(root, "test", "command-loading.test.ts"), "--probe", installed, project], { cwd: project, env });
+  run(process.execPath, [join(root, "test", "command-loading.test.ts"), "--probe", installed, project, "fail"], { cwd: project, env });
   passed = true;
   console.log(`Release checks passed. Artifact: ${archive}`);
 } finally {

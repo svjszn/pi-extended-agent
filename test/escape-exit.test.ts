@@ -1,25 +1,30 @@
+import type { ExtensionContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { Component, EditorTheme } from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+const { captureFlashes } = await import(new URL("../dist/bin/flash-interface.js", import.meta.url).href) as typeof import("../bin/flash-interface.js");
+const { clearFlash, visibleFlash } = await import(new URL("../dist/lib/flash-status.js", import.meta.url).href) as typeof import("../lib/flash-status.js");
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { createEscapeExitEditor } from "../dist/ui/escape-exit.js";
-import { setAvailableUpdates, setUpdateNoticeVisible } from "../dist/lib/update-status.js";
-import { getAppearance, setAppearance } from "../dist/lib/appearance.js";
+const { createEscapeExitEditor } = await import(new URL("../dist/ui/escape-exit.js", import.meta.url).href) as typeof import("../ui/escape-exit.js");
+const { setAvailableUpdates, setUpdateNoticeVisible } = await import(new URL("../dist/lib/update-status.js", import.meta.url).href) as typeof import("../lib/update-status.js");
+const { getAppearance, setAppearance } = await import(new URL("../dist/lib/appearance.js", import.meta.url).href) as typeof import("../lib/appearance.js");
 
 const piEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const require = createRequire(piEntry);
-const { matchesKey, visibleWidth, stripTerminalSequences } = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href);
-const { CustomEditor } = await import(new URL("./modes/interactive/components/custom-editor.js", piEntry).href);
-const { KeybindingsManager } = await import(new URL("./core/keybindings.js", piEntry).href);
+const { matchesKey, visibleWidth, stripTerminalSequences } = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href) as typeof import("@earendil-works/pi-tui");
+const { CustomEditor } = await import(new URL("./modes/interactive/components/custom-editor.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/custom-editor.js");
+const { KeybindingsManager } = await import(new URL("./core/keybindings.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js");
 
 function editorState(showEffort = false, now = Date.now) {
   const state = { idle: true, pending: false, exits: 0, cancels: 0, effort: "medium", modeSwitches: 0 };
-  const tui = { children: [], requestRender() {}, terminal: { columns: 80, rows: 24 } };
+  const tui = { children: [] as Component[], requestRender() {}, terminal: { columns: 80, rows: 24 } };
   const Editor = createEscapeExitEditor(CustomEditor, matchesKey, {
     isIdle: () => state.idle, hasPendingMessages: () => state.pending,
   }, showEffort ? { getLevel: () => state.effort } : undefined, () => { state.modeSwitches++; }, now);
-  const theme = { borderColor: (text) => text, selectList: {} };
-  const editor = new Editor(tui, theme, new KeybindingsManager(), { embedWorkingStatus: true });
+  const theme = { borderColor: (text: string) => text, selectList: {} };
+  const editor = new Editor((tui as unknown as ConstructorParameters<typeof Editor>[0]), theme as EditorTheme, new KeybindingsManager(), { embedWorkingStatus: true });
   editor.onCtrlD = () => { state.exits++; };
   editor.onEscape = () => { state.cancels++; };
   return { editor, state, tui };
@@ -75,7 +80,7 @@ test("Escape closes autocomplete instead of exiting", () => {
 test("Escape cancels running user shell commands instead of exiting", () => {
   const { editor, state, tui } = editorState();
   const shell = { getCommand: () => "sleep 10", status: "running" };
-  tui.children.push({ children: [shell] });
+  tui.children.push({ children: [shell] } as unknown as Component);
   editor.handleInput("\x1b");
   assert.equal(state.exits, 0);
   assert.equal(state.cancels, 1);
@@ -103,10 +108,10 @@ test("full-width editor keeps its inset chevron, text wrapping, cursor clicks, a
   assert.match(lines[0], /\x1b\[22;2m/);
   assert.match(stripTerminalSequences(lines[1]), /^❯ hello/);
   assert.ok(!lines.join("").includes("\x1b[34m"));
-  editor.handleMouse({ type: "click", button: "left", x: 2, y: 1, width: 80, height: 3 });
+  editor.handleMouse({screenX: 0, screenY: 0, shift: false, alt: false, ctrl: false,  type: "click", button: "left", x: 2, y: 1, width: 80, height: 3 });
   editor.handleInput("X");
   assert.equal(editor.getText(), "Xhello");
-  editor.handleMouse({ type: "click", button: "left", x: 5, y: 1, width: 80, height: 3 });
+  editor.handleMouse({screenX: 0, screenY: 0, shift: false, alt: false, ctrl: false,  type: "click", button: "left", x: 5, y: 1, width: 80, height: 3 });
   editor.handleInput("Y");
   assert.equal(editor.getText(), "XheYllo");
   assert.ok(!editor.getText().includes("❯"));
@@ -135,10 +140,10 @@ test("effort alternates with update status while Working and cursor clicks keep 
   assert.match(editor.render(80)[0], /38;2;175;135;255m1\.2\.0/);
   editor.setText("hello");
   editor.render(80);
-  editor.handleMouse({ type: "click", button: "left", x: 2, y: 2, width: 80, height: 4 });
+  editor.handleMouse({screenX: 0, screenY: 0, shift: false, alt: false, ctrl: false,  type: "click", button: "left", x: 2, y: 2, width: 80, height: 4 });
   editor.handleInput("X");
   assert.equal(editor.getText(), "Xhello");
-  editor.setWorkingStatusIndicator({ renderInBorder: () => "Working…", renderSpinnerInBorder: () => "*" });
+  editor.setWorkingStatusIndicator({ renderInBorder: () => "Working…", renderSpinnerInBorder: () => "*" } as unknown as Parameters<typeof editor.setWorkingStatusIndicator>[0]);
   const status = stripTerminalSequences(editor.render(80)[0]);
   assert.ok(status.startsWith("  Working…"));
   assert.ok(status.endsWith("Update 1.2.0 · pi update  "));
@@ -149,7 +154,7 @@ test("effort alternates with update status while Working and cursor clicks keep 
   border = stripTerminalSequences(editor.render(80)[1]);
   assert.match(border, /more/);
   editor.setText("");
-  for (const width of [1, 2, 8, 16, 24, 80]) assert.ok(editor.render(width).every((line) => visibleWidth(line) <= width), JSON.stringify({ width, lines: editor.render(width).map(stripTerminalSequences) }));
+  for (const width of [1, 2, 8, 16, 24, 80]) assert.ok(editor.render(width).every((line) => visibleWidth(line) <= width), JSON.stringify({ width, lines: editor.render(width).map((line) => stripTerminalSequences(line)) }));
   setUpdateNoticeVisible(false);
   assert.ok(stripTerminalSequences(editor.render(80)[0]).endsWith("high  "));
   state.effort = "xhigh";
@@ -162,7 +167,7 @@ test("paused high and xhigh labels use their exact solid colors, independent of 
   t.after(() => setAppearance(previous));
   const { editor, state } = editorState(true);
   t.after(() => editor.dispose());
-  for (const mode of ["dark", "light"]) for (const color of ["default", "green", "purple"]) {
+  for (const mode of ["dark", "light"] as const) for (const color of ["default", "green", "purple"] as const) {
     setAppearance({ mode, color });
     for (const [level, rgb] of [["high", "177;185;249"], ["xhigh", "175;135;255"]]) {
       state.effort = level;
@@ -180,7 +185,7 @@ test("paused high and xhigh labels use their exact solid colors, independent of 
 test("idle effort stays static without scheduling timers or changing the draft and selected level", (t) => {
   let time = 0, scheduled = 0;
   const nativeInterval = globalThis.setInterval;
-  t.mock.method(globalThis, "setInterval", (...args) => { scheduled++; return nativeInterval(...args); });
+  t.mock.method(globalThis, "setInterval", (callback: () => void, delay?: number) => { scheduled++; return nativeInterval(callback, delay); });
   const { editor, state } = editorState(true, () => time);
   t.after(() => editor.dispose());
   editor.focused = true;
@@ -254,4 +259,77 @@ test("high, xhigh and max animate only during work, pausing for idle, updates, b
   assert.equal(state.effort, "high");
   editor.dispose();
   const stopped = renders; await tick(); assert.equal(renders, stopped);
+});
+
+test("a copy confirmation takes the input corner instead of the alternate screen", (t) => {
+  t.after(() => clearFlash());
+  let renders = 0;
+  const host: import("../bin/flash-interface.js").FlashHost & { flash(message: string): void } = { flash() { assert.fail("the native flash stack must not be used while relocated"); } };
+  const restore = captureFlashes(host, () => { renders++; });
+  assert.ok(restore, "the adapter must attach to a host that flashes");
+  const { editor, state } = editorState(true);
+  editor.focused = true;
+  // Effort holds the corner until something is copied.
+  assert.match(stripTerminalSequences(editor.render(80)[0]), /medium/);
+  host.flash("Copied!");
+  assert.equal(renders, 1, "a notice repaints the input once");
+  assert.equal(visibleFlash(80), "Copied!");
+  const corner = stripTerminalSequences(editor.render(80)[0]);
+  assert.match(corner, /Copied!/);
+  assert.doesNotMatch(corner, /medium/, "the notice replaces the effort label while it lasts");
+  assert.ok(editor.render(80)[0].endsWith("  "), "the corner keeps the shared inset");
+  // The level comes back by itself once the notice expires.
+  clearFlash();
+  assert.match(stripTerminalSequences(editor.render(80)[0]), /medium/);
+  // An unreadable corner keeps the level rather than truncating the notice.
+  host.flash("Copied a very long selection to the clipboard");
+  assert.doesNotMatch(stripTerminalSequences(editor.render(24)[0]), /Copied/);
+  clearFlash();
+  state.effort = "high";
+  restore();
+  assert.equal(visibleFlash(80), undefined, "restoring clears any notice still showing");
+  assert.equal(typeof host.flash, "function", "the native flash stack is handed back");
+  host.flash = () => {};
+});
+
+test("a replaced session keeps its input mounted and readable until the next one binds", async () => {
+  let stale = false;
+  const live = <T>(value: T): T => {
+    if (stale) throw new Error("Extension context is no longer active: the session was replaced.");
+    return value;
+  };
+  const handlers = new Map();
+  const pi = {
+    on: ((name, handler) => { handlers.set(name, handler); return () => {}; }) satisfies ExtensionAPI["on"],
+    events: { emit() {} },
+    getThinkingLevel: () => live("high"),
+    setThinkingLevel() {},
+  };
+  const tui = { children: [] as Component[], requestRender() {}, terminal: { columns: 80, rows: 24 } };
+  let editor!: InstanceType<ReturnType<typeof createEscapeExitEditor>>;
+  const ctx = {
+    mode: "tui", hasUI: true,
+    isIdle: () => live(false),
+    hasPendingMessages: () => live(false),
+    get model() { return live({ id: "m", provider: "anthropic", api: "messages" }); },
+    ui: {
+      setEditorComponent: (create: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]>) => { editor = create(tui as unknown as import("@earendil-works/pi-tui").TUI, { borderColor: (text: string) => text, selectList: {} } as EditorTheme, new KeybindingsManager()) as typeof editor; },
+      notify() {},
+    },
+  };
+  const escapeExit = (await import(new URL("../dist/extensions/escape-exit.js", import.meta.url).href) as typeof import("../extensions/escape-exit.js")).default;
+  escapeExit(pi as unknown as ExtensionAPI);
+  handlers.get("session_start")({}, ctx);
+  editor.focused = true;
+  const mounted = editor.render(80).map(stripTerminalSequences);
+  assert.match(mounted[0], /high/);
+  // Pi keeps this input on screen while the replacement loads; the context that
+  // created it throws on every read from here on.
+  handlers.get("session_shutdown")({ type: "session_shutdown", reason: "new" });
+  stale = true;
+  assert.deepEqual(editor.render(80).map(stripTerminalSequences), mounted, "the input keeps what its session last reported");
+  // Quitting still releases it.
+  stale = false;
+  handlers.get("session_shutdown")({ type: "session_shutdown", reason: "quit" });
+  editor.dispose();
 });

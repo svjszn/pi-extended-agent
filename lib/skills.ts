@@ -12,7 +12,7 @@ export interface CatalogSkill {
 }
 export interface InstalledSkill {
   name: string; description: string; source: string; filePath: string; scope: string; installed: true;
-  skillId?: string; installs?: never;
+  skillId?: string; installs?: never; enabled?: boolean;
 }
 export type SkillItem = CatalogSkill | InstalledSkill;
 export interface SkillFile { path: string; sha: string; mode: string }

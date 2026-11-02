@@ -1,4 +1,4 @@
-import { getAgentDir, getPackageDir, VERSION } from "@earendil-works/pi-coding-agent";
+import { createCodemodeExtension, getAgentDir, getPackageDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { BuildSystemPromptOptions, ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { join } from "node:path";
@@ -10,9 +10,11 @@ import { PlanStore, isPlanning, canPlanRead, renderPlan, parsePlan, validatePlan
 import type { Plan } from "../lib/plan.js";
 import { PromptStore, PROMPT_ENTRY, PROMPT_SCOPES, isPromptScope, sessionPrompt, promptAdditions } from "../lib/prompt.js";
 import type { PromptScope } from "../lib/prompt.js";
-import { isWorkspaceBookkeeping } from "../lib/workspace-tools.js";
+import { isWorkspaceBookkeeping, isDelegationTool } from "../lib/workspace-tools.js";
 import { readPermissionMode, PERMISSION_DESCRIPTIONS } from "../lib/permissions.js";
 import type { WorkspacePage } from "../ui/workspace-screen.js";
+import { CODE_MODE_CHANGED, CODE_MODE_ENTRY, readCodeMode } from "../lib/code-mode.js";
+import type { CodeModeState, WorkMode } from "../lib/code-mode.js";
 
 const string = { type: "string" };
 const TASK_WORKFLOW_GUIDANCE = "Keep work within the user's requested scope. When independent reads or searches are already known, batch them using available tools rather than spending one model round trip on each. Return relevant, bounded search results and reuse established findings; reread when edits or new evidence justify it. Preserve dependencies and serialize shared-state mutations. Run required validation, and finish when the requested result and checks are satisfied. Broaden investigation or repeat successful checks when new evidence, changed code, or explicit instructions warrant it. Never bypass permissions or conceal failed or unavailable checks to save time.";
@@ -72,12 +74,38 @@ async function edit(pi: ExtensionAPI, ctx: ExtensionCommandContext, title: strin
 }
 
 export default function workspace(pi: ExtensionAPI) {
+  let code: CodeModeState = { enabled: false, added: false };
+  // Keep the engine's implementation and sandbox. Override presentation only
+  // while this mode is selected; auto mode keeps the user's native preferences.
+  const nativeCodemode = createCodemodeExtension()({ ...pi, getSettings() {
+    const settings = pi.getSettings();
+    return code.enabled ? { ...settings, codemode: { ...settings.codemode, mode: "on" } } : settings;
+  } });
   let memory: MemoryStore, plans: PlanStore, prompts: PromptStore;
   let sessionAddition = "", activeSession = "", stateError: string | undefined;
   let storageReady = false;
   let plan: Plan | undefined;
   let stopModeShortcut: (() => void) | undefined;
   const announcePlan = () => pi.events.emit(PLAN_CHANGED, { planning: isPlanning(plan), status: plan?.status });
+  const announceCode = () => pi.events.emit(CODE_MODE_CHANGED, { enabled: code.enabled });
+  const setCodeMode = (enabled: boolean) => {
+    if (code.enabled === enabled) return;
+    const previous = pi.getActiveTools();
+    const next = enabled ? [...new Set([...previous, "codemode"])]
+      : code.added ? previous.filter((name) => name !== "codemode") : previous;
+    if (enabled && !pi.getAllTools().some((tool) => tool.name === "codemode" && tool.exposure !== "hidden")) {
+      throw new Error("Codemode is unavailable in the active tool selection.");
+    }
+    const previousMode = code;
+    const value = { enabled, added: enabled && !previous.includes("codemode") };
+    code = value;
+    try {
+      pi.setActiveTools(next);
+      if (enabled && !pi.getActiveTools().includes("codemode")) throw new Error("Codemode is excluded from the active tool selection.");
+      pi.appendEntry(CODE_MODE_ENTRY, value);
+    } catch (error) { code = previousMode; pi.setActiveTools(previous); throw error; }
+    announceCode();
+  };
   const enablePlanReaders = () => {
     // Native defaults often expose only read/bash/edit/write. Activate actual search tools
     // while shell is blocked, without re-enabling tools excluded from the registry by the user.
@@ -98,12 +126,24 @@ export default function workspace(pi: ExtensionAPI) {
       const entries = ctx.sessionManager.getEntries();
       const last = entries.filter((e) => e.type === "custom" && e.customType === PLAN_ENTRY).at(-1);
       if (!plan && last && isPlanning((last as { data?: Plan }).data)) throw new Error("The active plan file is missing. Use /plan cancel or start a new plan.");
+      code = readCodeMode(entries);
+      // The planning barrier wins if a replacement interrupted a transition.
+      if (isPlanning(plan) && code.enabled) setCodeMode(false);
+      else if (code.enabled) {
+        pi.setActiveTools([...new Set([...pi.getActiveTools(), "codemode"])]);
+        if (!pi.getActiveTools().includes("codemode")) {
+          setCodeMode(false);
+          notify(ctx, "Saved code mode is unavailable in the active tool selection. Returned to auto mode.", true);
+        }
+      }
       if (isPlanning(plan)) enablePlanReaders();
     } catch (error) { stateError = error instanceof Error ? error.message : String(error); }
     announcePlan();
+    announceCode();
   };
   const requireState = (ctx: ExtensionContext) => { initialize(ctx); if (stateError) throw new Error(stateError); };
   const savePlan = (value: Plan) => {
+    if (isPlanning(value)) setCodeMode(false);
     const wasPlanning = isPlanning(plan);
     const saved = plans.save(value);
     plan = saved;
@@ -113,25 +153,37 @@ export default function workspace(pi: ExtensionAPI) {
     if (isPlanning(plan)) enablePlanReaders();
     else if (wasPlanning && plan.toolsBefore) pi.setActiveTools(plan.toolsBefore);
   };
+  const switchMode = (mode: WorkMode, ctx: ExtensionContext) => {
+    if (!ctx.isIdle() || ctx.hasPendingMessages()) throw new Error("Wait for the current run and queued messages to finish before switching modes.");
+    requireState(ctx);
+    if (mode === "code") {
+      if (!pi.getAllTools().some((tool) => tool.name === "codemode" && tool.exposure !== "hidden")) throw new Error("Codemode is unavailable in the active tool selection.");
+      if (isPlanning(plan)) savePlan({ ...plan!, status: "paused" });
+      setCodeMode(true);
+    } else {
+      setCodeMode(false);
+      if (mode === "auto") {
+        if (isPlanning(plan)) savePlan({ ...plan!, status: "paused" });
+      } else if (!isPlanning(plan)) {
+        const draft = plan && !["completed", "cancelled"].includes(plan.status) ? plan : undefined;
+        savePlan({ version: 1, goal: "", steps: [], areas: [], checks: [], updatedAt: "", ...draft,
+          status: draft?.steps.length ? "ready" : "planning", toolsBefore: pi.getActiveTools() });
+      }
+    }
+  };
   pi.on("session_start", (_event, ctx) => {
     activeSession = ""; initialize(ctx); if (stateError) notify(ctx, stateError, true);
     stopModeShortcut?.();
     stopModeShortcut = pi.events.on(PLAN_TOGGLE, () => {
       try {
-        if (!ctx.isIdle() || ctx.hasPendingMessages()) throw new Error("Wait for the current run and queued messages to finish before switching modes.");
-        requireState(ctx);
-        if (isPlanning(plan)) savePlan({ ...plan!, status: "paused" });
-        else {
-          const draft = plan && !["completed", "cancelled"].includes(plan.status) ? plan : undefined;
-          savePlan({ version: 1, goal: "", steps: [], areas: [], checks: [], updatedAt: "", ...draft,
-            status: draft?.steps.length ? "ready" : "planning", toolsBefore: pi.getActiveTools() });
-        }
+        const available = pi.getAllTools().some((tool) => tool.name === "codemode" && tool.exposure !== "hidden");
+        switchMode(code.enabled ? "auto" : isPlanning(plan) ? available ? "code" : "auto" : "plan", ctx);
       } catch (error) { notify(ctx, error instanceof Error ? error.message : String(error), true); }
     });
   });
   pi.on("session_shutdown", () => {
     stopModeShortcut?.(); stopModeShortcut = undefined;
-    activeSession = ""; plan = undefined; stateError = undefined;
+    activeSession = ""; plan = undefined; stateError = undefined; code = { enabled: false, added: false };
   });
   pi.on("tool_call", (event, ctx) => {
     initialize(ctx);
@@ -139,6 +191,8 @@ export default function workspace(pi: ExtensionAPI) {
     if (!isPlanning(plan) && !stateError) return;
     if (canPlanRead(event.toolName, pi.getAllTools())) return;
     if (!stateError && isWorkspaceBookkeeping(event.toolName, event.input, pi.getAllTools())) return;
+    // A subagent may research during planning; its own guard blocks changes.
+    if (!stateError && isDelegationTool(event.toolName, pi.getAllTools())) return;
     return { block: true, terminate: true, reason: stateError ? `Workspace state: ${stateError}`
       : `Plan mode: ${event.toolName} is blocked. Read and search only; the user must choose /plan execute before changes.` };
   });
@@ -153,6 +207,7 @@ export default function workspace(pi: ExtensionAPI) {
     sections.pi_extended_memory = `${memoryPrompt(memory)}\nMemory reads are allowed in every permission mode; saves/deletes require approval in Ask mode and are blocked in Read only and Plan modes.`;
     const additions = promptAdditions(prompts.read("global"), prompts.read("project"), sessionAddition);
     if (additions) sections.pi_extended_prompt = additions;
+    if (code.enabled) sections.pi_extended_code_mode = "CODE MODE: Pi's native codemode tool is available alongside ordinary tools. Batch independent reads and searches with JavaScript and Promise.allSettled when useful; await every call and return bounded results with text(). Keep dependent actions and shared-state mutations in order. All nested calls remain subject to the current permissions. Do not bypass blocked tools or omit required validation.";
     if (!plan || ["cancelled", "completed", "paused"].includes(plan.status)) sections.pi_extended_workflow = TASK_WORKFLOW_GUIDANCE;
     if (plan && !["cancelled", "completed", "paused"].includes(plan.status)) sections.pi_extended_plan =
       `${isPlanning(plan) ? "PLANNING MODE: research and prepare a plan only. No code edits, shell commands, or external side effects. Only the user can approve execution with /plan execute. Use update_plan to persist the proposed goal, steps, affected areas and checks; then present the plan and wait for approval."
@@ -166,6 +221,18 @@ export default function workspace(pi: ExtensionAPI) {
     if (event.systemPromptOptions.forceSystemPrompt !== undefined) return {
       systemPrompt: `${event.systemPrompt}\n\n${Object.values(sections()).join("\n\n")}`,
     };
+  });
+  pi.registerCommand("mode", {
+    description: "Choose auto, plan, or code mode (native codemode plus ordinary tools)",
+    getArgumentCompletions: (prefix) => ["auto", "plan", "code"].filter((mode) => mode.startsWith(prefix.trim().toLowerCase())).map((mode) => ({ value: mode, label: mode })),
+    handler: async (args, ctx) => {
+      try {
+        const mode = args.trim().toLowerCase();
+        if (!mode) { requireState(ctx); notify(ctx, `Mode: ${isPlanning(plan) ? "plan" : code.enabled ? "code" : "auto"}. Use /mode auto, /mode plan, or /mode code.`); return; }
+        if (mode !== "auto" && mode !== "plan" && mode !== "code") throw new Error("Use /mode auto, /mode plan, or /mode code.");
+        switchMode(mode, ctx); notify(ctx, `${mode === "code" ? "Code mode" : mode === "plan" ? "Plan mode" : "Auto mode"} enabled. Current permissions are unchanged.`);
+      } catch (error) { notify(ctx, error instanceof Error ? error.message : String(error), true); }
+    },
   });
   pi.registerTool({ name: "project_memory", label: "Project memory", parameters: memorySchema,
     description: "Persistent project memory. list returns a short index; read loads details by id. save upserts a topic (id, title, summary, content); delete removes obsolete facts. Never store secrets or transient task progress.",
@@ -266,6 +333,9 @@ export default function workspace(pi: ExtensionAPI) {
     }
     if (action === "start") {
       const value = boundedText(goal, "Goal", 4_000);
+      // Capture the loadout after releasing code mode, so cancelling or executing
+      // this plan cannot restore a codemode tool owned by the previous mode.
+      setCodeMode(false);
       savePlan({ version: 1, status: "planning", goal: value, steps: [], areas: [], checks: [], updatedAt: "",
         toolsBefore: isPlanning(plan) && plan?.toolsBefore ? plan.toolsBefore : pi.getActiveTools() });
       if (value) pi.sendUserMessage(`Research and prepare a plan for this goal. Save it with update_plan, then wait for my approval.\n\n${value}`, { deliverAs: "followUp" });
@@ -343,4 +413,5 @@ export default function workspace(pi: ExtensionAPI) {
       } catch (error) { notify(ctx, String(error instanceof Error ? error.message : error), true); }
     },
   });
+  return nativeCodemode;
 }

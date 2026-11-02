@@ -4,6 +4,7 @@ import type { CustomEditor, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { matchesKey as match, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { TreeComponent } from "./types.js";
 import { visibleUpdateLabel, visibleUpdateVersion } from "../lib/update-status.js";
+import { flashExpiry, visibleFlash } from "../lib/flash-status.js";
 import { animatedEffort, effortGlow } from "./effort-style.js";
 
 const inputInset = (width: number) => Math.min(2, Math.floor(Math.max(0, width - 1) / 2));
@@ -28,6 +29,8 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
     dispose() {
       this.disposed = true;
       this.stopAnimation();
+      clearTimeout(this.flashTimer);
+      this.flashTimer = undefined;
     }
     private stopAnimation() { clearInterval(this.animation); this.animation = undefined; }
     private animate(enabled: boolean) {
@@ -38,6 +41,23 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
         this.tui.requestRender();
       }, 80);
       this.animation.unref?.();
+    }
+    private flashTimer: ReturnType<typeof setTimeout> | undefined;
+    private flashUntil = 0;
+    /** Repaint once when a transient notice runs out, without a render loop. */
+    private scheduleFlashExpiry() {
+      const until = flashExpiry();
+      if (until === this.flashUntil) return;
+      this.flashUntil = until;
+      clearTimeout(this.flashTimer);
+      this.flashTimer = undefined;
+      const delay = until - now();
+      if (!until || delay <= 0 || this.disposed) return;
+      this.flashTimer = setTimeout(() => {
+        this.flashTimer = undefined;
+        if (!this.disposed) this.tui.requestRender();
+      }, delay);
+      this.flashTimer.unref?.();
     }
     private statusIndicator: Parameters<CustomEditor["setWorkingStatusIndicator"]>[0];
     setWorkingStatusIndicator(indicator: Parameters<CustomEditor["setWorkingStatusIndicator"]>[0]) {
@@ -61,13 +81,19 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       const inner = Math.max(1, width - inset * 2);
       const rawStatus = this.statusIndicator?.renderInBorder(inner) ?? "";
       const rightWidth = rawStatus ? Math.max(0, inner - 12) : inner;
-      const update = visibleUpdateLabel(rightWidth);
+      // A transient notice takes the corner while it lasts: it reports something
+      // the user just did, and the effort level is still one keystroke away.
+      const flash = visibleFlash(rightWidth);
+      const update = flash ? undefined : visibleUpdateLabel(rightWidth);
       const level = effort?.getLevel() ?? "";
-      const label = truncateToWidth(update ?? level, rightWidth, "");
+      const label = truncateToWidth(flash ?? update ?? level, rightWidth, "");
       const statusWidth = Math.max(0, inner - (label ? visibleWidth(label) + 2 : 0));
       const status = statusWidth ? truncateToWidth(this.statusIndicator?.renderInBorder(statusWidth) ?? "", statusWidth, "") : "";
-      this.statusRows = effort || status || label ? 1 : 0;
-      const animateLabel = !this.disposed && this.focused && !update && !!label && animatedEffort(level) && !ctx.isIdle();
+      // Reserve the row only when it carries something: an unauthenticated
+      // session has no effort to show and must not leave a blank line.
+      this.statusRows = status || label ? 1 : 0;
+      this.scheduleFlashExpiry();
+      const animateLabel = !this.disposed && this.focused && !flash && !update && !!label && animatedEffort(level) && !ctx.isIdle();
       this.animate(animateLabel);
       this.borderColor = (value) => faintInputRule(theme.fg("inputBorder", value));
       const contentPadding = Math.min(2, Math.max(0, Math.floor((width - 4) / 2)));
@@ -80,11 +106,11 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       }
       const lines = nativeLines.map((line) => theme.fg("primary", truncateToWidth(line, width, "")));
       if (this.statusRows) {
-        const role = update || level === "low" ? "effortLow" : level === "medium" ? "effortMedium"
+        const role = flash ? "muted" : update || level === "low" ? "effortLow" : level === "medium" ? "effortMedium"
           : level === "high" ? "effortHigh" : level === "xhigh" ? "effortXhigh" : "primary";
         // A paused shimmer is not the base color: use the exact high/xhigh
         // palette for the whole idle label, retaining a static rainbow for max.
-        let right = !update && (animateLabel || level === "max")
+        let right = !flash && !update && (animateLabel || level === "max")
           ? effortGlow(level, label, animateLabel ? now() / 1000 : 0) : theme.fg(role, label);
         const version = update ? visibleUpdateVersion() : undefined;
         const versionStart = version ? label.indexOf(version) : -1;

@@ -5,12 +5,14 @@ import type { Terminal, truncateToWidth as truncate } from "@earendil-works/pi-t
 import type { ContextSummary } from "../lib/context.js";
 import { contextTokens, contextPercent } from "./context-format.js";
 import { permissionFooter } from "../lib/permissions.js";
+import { hasModel } from "../lib/startup.js";
 import type { PermissionMode } from "../lib/permissions.js";
+import { getAppearance } from "../lib/appearance.js";
 import { createUiTheme } from "./theme.js";
 
 interface HeaderInfo {
   version: string;
-  getModel(): { id: string; name?: string } | undefined;
+  getModel(): { id: string; name?: string; provider?: string; api?: string } | undefined;
   getThinkingLevel(): string;
   getCwd?(): string;
   getAuthNotice?(): string | undefined;
@@ -64,13 +66,19 @@ export function createHeader(tui: HeaderTui, { truncateToWidth }: HeaderMeasure,
       // Official pi.dev mark, normalized to its 4×4 square grid.
       // Two terminal columns per pixel preserve square proportions.
       // The original SVG geometry is kept alongside this file in pi-logo.svg.
-      const logo = ["██████  ", "██  ██  ", "████  ██", "██    ██"];
+      const logo = getAppearance().legacyLogo
+        // Serif roof and feet, as in the legacy mark; retain the 8×4 inset.
+        ? ["████████", " ██  ██ ", " ██  ██ ", "███  ███"]
+        : ["██████  ", "██  ██  ", "████  ██", "██    ██"];
       const model = info.getModel();
+      // Without a model there is no name or effort to report: Pi's placeholder
+      // would otherwise read as "unknown with off effort".
+      const selected = hasModel(model);
       const modelName = model?.id?.startsWith("gpt-")
         ? model.id.split("-").map((part, index) => index === 0 ? "GPT" : part.charAt(0).toUpperCase() + part.slice(1)).join("-")
         : model?.name ?? model?.id ?? "No model selected";
       const title = ink(palette.bold(`pi coding agent v${info.version}`));
-      const subtitle = palette.fg("muted", `${modelName} with ${info.getThinkingLevel()} effort`);
+      const subtitle = palette.fg("muted", selected ? `${modelName} with ${info.getThinkingLevel()} effort` : "No model selected");
       const cwd = String(info.getCwd?.() ?? process.cwd()).replace(/[\x00-\x1f\x7f-\x9f]/g, "");
       const labels = [title, subtitle, palette.fg("dim", cwd)];
       const content = width >= 32
@@ -116,7 +124,7 @@ export function createHeader(tui: HeaderTui, { truncateToWidth }: HeaderMeasure,
 }
 
 export function createFooter(_ctx: unknown, _tui: unknown, theme: Palette, _footerData: unknown, { truncateToWidth }: HeaderMeasure,
-  getContext?: () => ContextSummary | undefined, getPermissions?: () => PermissionMode, getPlanning?: () => boolean) {
+  getContext?: () => ContextSummary | undefined, getPermissions?: () => PermissionMode, getPlanning?: () => boolean, getCodeMode?: () => boolean) {
   const palette = createUiTheme();
   return {
     invalidate() {},
@@ -124,9 +132,10 @@ export function createFooter(_ctx: unknown, _tui: unknown, theme: Palette, _foot
     render(width: number) {
       if (width < 1) return [];
       const planning = getPlanning?.() === true;
+      const codeMode = getCodeMode?.() === true;
       const permissions = getPermissions?.() ?? "full";
-      const modeLabel = planning ? "plan mode" : permissionFooter(permissions);
-      const modeColor = planning ? "effortMedium" : permissions === "full" ? "effortLow" : "dim";
+      const modeLabel = planning ? "plan mode" : codeMode ? "code mode" : permissionFooter(permissions);
+      const modeColor = planning ? "effortMedium" : codeMode ? "effortHigh" : permissions === "full" ? "effortLow" : "dim";
       const left = `  ${palette.fg(modeColor, modeLabel)}`;
       const usage = getContext?.();
       if (!usage) return [truncateToWidth(left, width)];

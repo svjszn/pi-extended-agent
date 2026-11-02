@@ -1,3 +1,8 @@
+import { tuiFixture } from "./helpers.ts";
+import { commandFixture } from "./helpers.ts";
+import type { PanelFactory } from "./helpers.ts";
+import type { ExtensionUIContext, CustomEditor } from "@earendil-works/pi-coding-agent";
+import { present } from "./helpers.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { registerHooks } from "node:module";
@@ -8,7 +13,7 @@ import { captureCommand } from "../scripts/capture-command.mjs";
 
 // A fresh process is essential: other tests deliberately import these views.
 // Observe the actual CLI-bundle loader, not a hand-built Jiti configuration.
-async function probe(root, directory, failApproval, bound = true) {
+async function probe(root: string, directory: string, failApproval: unknown, bound = true) {
   const loadedModules = new Set(), prefix = pathToFileURL(join(root, "dist") + "/").href;
   const nativeLoads = new Set();
   let binding;
@@ -23,16 +28,16 @@ async function probe(root, directory, failApproval, bound = true) {
   } });
   globalThis.fetch = () => assert.fail("Command loading must not make network requests");
   try {
-    const { bundledRuntime } = await import(pathToFileURL(join(root, "dist/bin/runtime.js")));
+    const { bundledRuntime } = await import(pathToFileURL(join(root, "dist/bin/runtime.js")).href);
     const runtime = bundledRuntime();
     process.env.PI_PACKAGE_DIR = runtime.packageDir;
-    const api = await import(pathToFileURL(join(runtime.packageDir, "dist/bundle/index.js")));
+    const api = await import(pathToFileURL(join(runtime.packageDir, "dist/bundle/index.js")).href) as typeof import("@earendil-works/pi-coding-agent");
     if (bound) {
-      const { bindCompiledExtensionImports } = await import(pathToFileURL(join(root, "dist/bin/extension-runtime.js")));
+      const { bindCompiledExtensionImports } = await import(pathToFileURL(join(root, "dist/bin/extension-runtime.js")).href);
       binding = bindCompiledExtensionImports(runtime, root);
     }
     api.initTheme("dark", false);
-    const loader = new api.DefaultResourceLoader({ cwd: directory, agentDir: process.env.PI_CODING_AGENT_DIR,
+    const loader = new api.DefaultResourceLoader({ cwd: directory, agentDir: present(process.env.PI_CODING_AGENT_DIR),
       settingsManager: api.SettingsManager.inMemory(), noExtensions: true, noSkills: true, noThemes: true,
       noPromptTemplates: true, noContextFiles: true, additionalExtensionPaths: [root] });
     const selectors = ["appearance", "config", "effort", "permissions", "skills", "workspace"].map(name => `ui/${name}-screen.js`);
@@ -43,32 +48,32 @@ async function probe(root, directory, failApproval, bound = true) {
       await loader.reload();
       const loaded = loader.getExtensions(); assert.deepEqual(loaded.errors, []);
       assert.equal(loaded.extensions.length, JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions.length);
-      const commands = new Map(loaded.extensions.flatMap(extension => [...extension.commands]));
+      const commands = new Map(loaded.extensions.flatMap(extension => [...extension.commands].map(([name, command]) => [name, commandFixture(command)] as const)));
       for (const name of ["usage", "stats", "status", "context", "config", "skills", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
         assert.ok(commands.has(name), `Missing /${name} before opening any screen`);
       }
       assert.equal(commands.has("perf"), false);
       assert.equal(nativeLoads.has(pathToFileURL(runtime.entry).href), !bound, "Compiled imports must use the selected host, not a duplicate SDK");
       const workspace = loaded.extensions.find(extension => extension.tools.has("project_memory"));
-      assert.equal(workspace.sourceInfo.path, join(root, "dist/extensions/workspace.js"), "Tool provenance must stay unchanged");
+      assert.equal(present(workspace).sourceInfo.path, join(root, "dist/extensions/workspace.js"), "Tool provenance must stay unchanged");
       if (!round) for (const name of deferred) assert.equal(loadedModules.has(name), false, `Eager module: ${name}`);
-      const manager = api.SessionManager.inMemory(directory), notices = [];
+      const manager = api.SessionManager.inMemory(directory), notices: {message: string;type?:string}[] = [];
       const tools = [{ name: "read", description: "Read", parameters: {}, sourceInfo: { source: "builtin", path: "builtin:read" } }];
       let level = "medium";
-      Object.assign(loaded.runtime, { getThinkingLevel: () => level, setThinkingLevel: value => { level = value; },
+      Object.assign(loaded.runtime, { getThinkingLevel: () => level, setThinkingLevel: (value: string) => { level = value; },
         getActiveTools: () => ["read"], getAllTools: () => tools,
-        appendEntry: (customType, data) => manager.appendCustomEntry(customType, data) });
-      let expected;
-      const ctx = { mode: "print", hasUI: true, cwd: directory, model: undefined, sessionManager: manager,
+        appendEntry: (customType: string, data: unknown) => manager.appendCustomEntry(customType, data) });
+      let expected!: RegExp;
+      const ctx = { mode: "print", hasUI: true, cwd: directory, model: undefined as {id:string;reasoning:boolean;thinkingLevelMap: Record<string,string|null>} | undefined, sessionManager: manager,
         isProjectTrusted: () => false, isIdle: () => true, hasPendingMessages: () => false,
         getSystemPromptOptions: () => ({ cwd: directory, skills: [], contextFiles: [], sections: {} }),
         getSystemPrompt: () => "Fixture prompt", getContextUsage: () => undefined,
-        ui: { theme: { name: "dark" }, notify: (message, type) => notices.push({ message, type }),
-          async custom(create) {
+        ui: { theme: { name: "dark" }, notify: (message: string, type?: string) => notices.push({ message, type }),
+          async custom(create: PanelFactory) {
             assert.equal(failApproval, false, "An unavailable approval view must not grant access");
             let closed = false;
             const tui = { mode: "fullscreen", children: [], terminal: { rows: 30, columns: 100 }, requestRender() {} };
-            const panel = create(tui, {}, {}, () => { closed = true; });
+            const panel = create(tui, {fg:(_role,text)=>text,bold:text=>text}, {}, () => { closed = true; });
             try {
               await panel.ready;
               assert.match(panel.render(100).join("\n"), expected);
@@ -80,16 +85,16 @@ async function probe(root, directory, failApproval, bound = true) {
       };
       if (failApproval) {
         ctx.mode = "tui";
-        await commands.get("permissions").handler("ask", ctx);
+        await present(commands.get("permissions")).handler("ask", ctx);
         const extension = loaded.extensions.find(extension => extension.commands.has("permissions"));
-        const call = name => extension.handlers.get("tool_call")[0]({ toolName: name, input: { path: "sample.txt" } }, ctx);
-        assert.equal((await call("write")).block, true);
+        const call = (name: string) => present(present(extension).handlers.get("tool_call"))[0]({ toolName: name, input: { path: "sample.txt" } }, ctx);
+        assert.equal((await call("write") as {block:boolean}).block, true);
         assert.equal(await call("read"), undefined);
         assert.equal(views, 0);
         continue;
       }
       for (const name of ["stats", "status", "context", "config", "skills", "permissions"]) {
-        await commands.get(name).handler("", ctx);
+        await present(commands.get(name)).handler("", ctx);
         assert.notEqual(notices.at(-1)?.type, "error", `${name}: ${notices.at(-1)?.message}`);
       }
       if (!round) for (const name of selectors) assert.equal(loadedModules.has(name), false, `Headless command loaded ${name}`);
@@ -97,11 +102,11 @@ async function probe(root, directory, failApproval, bound = true) {
       for (const [name, title, args = ""] of [["skills", /Skills/], ["stats", /Statistics/], ["usage", /Usage/], ["status", /Status/],
         ["context", /Context/], ["config", /Configuration/], ["permissions", /Permissions/], ["theme", /Theme/],
         ["color", /Color/], ["memory", /Memory/], ["plan", /Plan/], ["prompt", /System prompt/],
-        ["prompt", /Prompt/, "session"], ["effort", /Effort/]]) {
+        ["prompt", /Prompt/, "session"], ["effort", /Effort/]] as [string, RegExp, string?][]) {
         expected = title;
         ctx.model = name === "effort" ? { id: "fixture", reasoning: true, thinkingLevelMap: { high: "high", max: null } } : undefined;
         const before = views;
-        await commands.get(name).handler(args, ctx);
+        await present(commands.get(name)).handler(args, ctx);
         assert.equal(views, before + 1, `/${name} did not open after ${round ? "reload" : "cold load"}: ${notices.at(-1)?.message}`);
       }
       assert.equal(level, "medium", "Cancelling selectors must not change reasoning effort");
@@ -109,23 +114,24 @@ async function probe(root, directory, failApproval, bound = true) {
     }
     if (bound && !failApproval) {
       const loaded = loader.getExtensions();
-      const escape = loaded.extensions.find(extension => extension.path.endsWith("escape-exit.js"));
-      const { KeybindingsManager } = await import(new URL("./core/keybindings.js", pathToFileURL(runtime.entry)));
-      let editor;
+      const escape = loaded.extensions.find((extension: { path: string; }) => extension.path.endsWith("escape-exit.js"));
+      const { KeybindingsManager } = await import(new URL("./core/keybindings.js", pathToFileURL(runtime.entry)).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js");
+      let editor!: import("@earendil-works/pi-tui").EditorComponent;
       try {
-        escape.handlers.get("session_start")[0]({}, { mode: "tui", isIdle: () => true, hasPendingMessages: () => false,
-          ui: { setEditorComponent(create) {
-            editor = create({ children: [], terminal: { rows: 24, columns: 80 }, requestRender() {} },
-              { borderColor: text => text, selectList: {} }, new KeybindingsManager());
+        present(present(escape).handlers.get("session_start"))[0]({}, { mode: "tui", isIdle: () => true, hasPendingMessages: () => false,
+          model: { id: "fixture", provider: "fixture", api: "fixture" },
+          ui: { setEditorComponent(create: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]>) {
+            editor = create(tuiFixture({ children: [], terminal: { rows: 24, columns: 80 }, requestRender() {} }),
+              { borderColor: (text: string) => text, selectList: {} } as import("@earendil-works/pi-tui").EditorTheme, new KeybindingsManager());
           } } });
         assert.ok(editor instanceof api.CustomEditor, "The editor must inherit from the selected CLI's actual class");
-        editor.focused = true; editor.setText("Keep this draft");
-        for (const [level, rgb] of [["high", "177;185;249"], ["xhigh", "175;135;255"]]) {
+        present(editor).focused = true; present(editor).setText("Keep this draft");
+        for (const [level, rgb] of [["high", "177;185;249"], ["xhigh", "175;135;255"]] as const) {
           loaded.runtime.setThinkingLevel(level);
-          assert.ok(editor.render(80)[0].includes(`\x1b[38;2;${rgb}m${level}\x1b[39m`));
-          assert.equal(editor.getText(), "Keep this draft");
+          assert.ok(present(editor).render(80)[0].includes(`\x1b[38;2;${rgb}m${level}\x1b[39m`));
+          assert.equal(present(editor).getText(), "Keep this draft");
         }
-      } finally { escape.handlers.get("session_shutdown")[0](); loaded.runtime.setThinkingLevel("medium"); }
+      } finally { present(present(escape).handlers.get("session_shutdown"))[0](); loaded.runtime.setThinkingLevel("medium"); }
       const modelRuntime = await api.ModelRuntime.create({ modelsPath: null, refreshOnCreate: false,
         credentials: { async read() {}, async list() { return []; }, async modify() {}, async delete() {} } });
       const { session } = await api.createAgentSession({ cwd: directory, agentDir: process.env.PI_CODING_AGENT_DIR,
@@ -135,9 +141,9 @@ async function probe(root, directory, failApproval, bound = true) {
         await session.bindExtensions({ mode: "print" });
         session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "binding-test", name: "codemode", arguments: {} }],
           api: "test", provider: "test", model: "test", stopReason: "toolUse", timestamp: Date.now(),
-          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 } });
-        const context = session._extensionRunner.createToolContext("binding-test");
-        const call = (name, args) => context.executeTool(name, args);
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0} } });
+        const context = session.extensionRunner.createToolContext("binding-test", undefined);
+        const call = (name: string, args: { path?: string; content?: string; goal?: string; steps?: { text: string; status: string; }[]; }) => context.executeTool(name, args);
         assert.equal((await call("write", { path: "binding.txt", content: "original" })).isError, false);
         await session.prompt("/plan start");
         assert.equal((await call("write", { path: "binding.txt", content: "blocked" })).isError, true);
@@ -171,6 +177,6 @@ if (process.argv[2] === "--probe") {
       env: { ...process.env, PI_CODING_AGENT_DIR: join(directory, "profile"), PI_EXTENDED_RUNTIME_DIR: join(directory, "runtimes"), PI_OFFLINE: "1" },
     });
     assert.equal(result.status, 0, result.stderr.slice(-4000));
-    assert.deepEqual(JSON.parse(result.stdout.trim().split("\n").at(-1)), { views: failure ? 0 : 28, failApproval: failure, bound: mode !== "unbound" });
+    assert.deepEqual(JSON.parse(present(result.stdout.trim().split("\n").at(-1))), { views: failure ? 0 : 28, failApproval: failure, bound: mode !== "unbound" });
   });
 }

@@ -50,9 +50,10 @@ remain enforced separately by the harness.
 
 ## Pause or Cancel
 
-**Shift+Tab** switches between normal mode and plan mode while idle. Leaving
-plan mode pauses the draft; switching back restores it. The shortcut does not
-start implementation.
+**Shift+Tab** cycles **auto → plan → code → auto** while idle. Leaving plan mode
+pauses the draft; returning to plan restores it. The shortcut does not start
+implementation. `/mode plan` selects planning directly; [Code mode](/guide/code-mode)
+enables Pi's JavaScript orchestration alongside ordinary tools.
 
 Use `/plan start` to enter planning without sending a goal. Use `/plan cancel`
 to leave planning without executing the plan.

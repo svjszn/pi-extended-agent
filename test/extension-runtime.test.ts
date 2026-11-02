@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { bindCompiledExtensionImports } from "../dist/bin/extension-runtime.js";
+const { bindCompiledExtensionImports } = await import(new URL("../dist/bin/extension-runtime.js", import.meta.url).href) as typeof import("../bin/extension-runtime.js");
 
 // Deliberately different APIs: using this wrapper's dependency instead of the
 // selected managed engine must be observable, without installing another Pi.
@@ -12,7 +12,7 @@ test("compiled extension binding selects the managed API, preserves scope and fi
   mkdirSync(base, { recursive: true });
   const directory = mkdtempSync(join(base, "case-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const write = (name, content) => {
+  const write = (name: string, content: string|NodeJS.ArrayBufferView<ArrayBufferLike>) => {
     const file = join(directory, name); mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, content); return file;
   };
   const dependency = "node_modules/@earendil-works/pi-coding-agent/";
@@ -30,18 +30,18 @@ test("compiled extension binding selects the managed API, preserves scope and fi
   const outside = ["wrapper/dist/bin/probe.js", "wrapper/dist/ui-sibling/probe.js", "project/extension.js",
     "wrapper/node_modules/addon/probe.mjs"].map(name => write(name, source));
   const after = write("wrapper/dist/lib/after.js", source);
-  const api = await import(pathToFileURL(bundle));
-  const binding = bindCompiledExtensionImports({ packageDir: join(directory, "engine") }, root);
+  const api = await import(pathToFileURL(bundle).href);
+  const binding = bindCompiledExtensionImports({ packageDir: join(directory, "engine"), entry: bundle, cli: bundle, version: "fixture" }, root);
   try {
     for (const file of owned) {
-      const module = await import(pathToFileURL(file));
+      const module = await import(pathToFileURL(file).href);
       assert.equal(module.VERSION, "managed-engine"); assert.equal(module.CustomEditor, api.CustomEditor);
       assert.equal(module.extra, "subpath"); assert.equal(module.location, pathToFileURL(file).href);
     }
     for (const file of outside) {
-      const module = await import(pathToFileURL(file));
+      const module = await import(pathToFileURL(file).href);
       assert.equal(module.VERSION, "wrapper-sdk"); assert.notEqual(module.CustomEditor, api.CustomEditor);
     }
   } finally { binding.deregister(); }
-  assert.equal((await import(pathToFileURL(after))).VERSION, "wrapper-sdk");
+  assert.equal((await import(pathToFileURL(after).href)).VERSION, "wrapper-sdk");
 });

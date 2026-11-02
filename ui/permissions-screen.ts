@@ -34,18 +34,35 @@ export function createPermissionsScreen({ current, onSelect, ...options }: Scree
   });
 }
 
-export function createPermissionApprovalScreen({ lines, ...options }: ScreenOptions & { lines: string[] }) {
-  let allow = false;
+export type ApprovalChoice = "deny" | "once" | "run";
+/**
+ * Denial stays the default and Escape always denies. The run-wide choice appears
+ * only when a caller offers it, and it is never preselected: a grant that covers
+ * more than one call must be picked deliberately.
+ */
+export function createPermissionApprovalScreen({ lines, runLabel, onChoice, ...options }: ScreenOptions & {
+  lines: string[]; runLabel?: string; onChoice?(choice: ApprovalChoice): void;
+}) {
+  const choices: ApprovalChoice[] = runLabel ? ["deny", "once", "run"] : ["deny", "once"];
+  const labels: Record<ApprovalChoice, string> = { deny: "Deny", once: "Allow once", run: runLabel ?? "Allow for this run" };
+  let selected = 0;
   const { theme, measure, tui } = options;
+  const close = (controls: { close(result?: boolean): void }, choice: ApprovalChoice) => {
+    onChoice?.(choice);
+    controls.close(choice !== "deny");
+  };
   return createCommandPanel({ ...options, title: "Permission request", load: () => true,
     renderBody: () => lines.map((line) => theme.fg("text", line)),
-    renderInput: () => theme.fg("muted", `${allow ? "○ Deny   ● Allow once" : "● Deny   ○ Allow once"} · ←→ choose · enter apply · esc deny`),
+    renderInput: () => theme.fg("muted", `${choices.map((choice, index) =>
+      `${index === selected ? "●" : "○"} ${labels[choice]}`).join("   ")} · ←→ choose · enter apply · esc deny`),
     onInput(data, controls) {
       const key = (name: KeyId) => measure.matchesKey(data, name);
-      if (key("escape") || key("ctrl+c")) { controls.close(false); return true; }
-      if (key("enter")) { controls.close(allow); return true; }
-      if (key("left") || key("right") || key("tab") || key("shift+tab")) { allow = !allow; tui.requestRender(); return true; }
-      return false;
+      if (key("escape") || key("ctrl+c")) { close(controls, "deny"); return true; }
+      if (key("enter")) { close(controls, choices[selected]); return true; }
+      if (key("left") || key("shift+tab")) selected = Math.max(0, selected - 1);
+      else if (key("right") || key("tab")) selected = Math.min(choices.length - 1, selected + 1);
+      else return false;
+      tui.requestRender(); return true;
     },
   });
 }

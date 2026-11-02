@@ -1,28 +1,29 @@
+import { assistantFixture, tuiFixture } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { createFooter, createHeader, pinTerminalTitle } from "../dist/ui/chrome.js";
-import { createChatStyle } from "../dist/ui/chat.js";
-import { createCommandPanel } from "../dist/ui/command-panel.js";
-import { createUiTheme } from "../dist/ui/theme.js";
-import { shareTranscriptFrame } from "../dist/bin/transcript-interface.js";
+const { createFooter, createHeader, pinTerminalTitle } = await import(new URL("../dist/ui/chrome.js", import.meta.url).href) as typeof import("../ui/chrome.js");
+const { createChatStyle } = await import(new URL("../dist/ui/chat.js", import.meta.url).href) as typeof import("../ui/chat.js");
+const { createCommandPanel } = await import(new URL("../dist/ui/command-panel.js", import.meta.url).href) as typeof import("../ui/command-panel.js");
+const { createUiTheme } = await import(new URL("../dist/ui/theme.js", import.meta.url).href) as typeof import("../ui/theme.js");
+const { shareTranscriptFrame } = await import(new URL("../dist/bin/transcript-interface.js", import.meta.url).href) as typeof import("../bin/transcript-interface.js");
 
 const piEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const require = createRequire(piEntry);
 const tuiEntry = pathToFileURL(require.resolve("@earendil-works/pi-tui"));
-const { Container, Spacer, truncateToWidth, visibleWidth, stripTerminalSequences } = await import(tuiEntry.href);
-const { renderLayoutFrame, getLayoutBoxesAt } = await import(new URL("./layout.js", tuiEntry).href);
-const { createChatViewport } = await import(new URL("./modes/interactive/chat-viewport.js", piEntry).href);
-const { UserMessageComponent } = await import(new URL("./modes/interactive/components/user-message.js", piEntry).href);
-const { AssistantMessageComponent } = await import(new URL("./modes/interactive/components/assistant-message.js", piEntry).href);
-const { initTheme } = await import(new URL("./modes/interactive/theme/theme.js", piEntry).href);
-const { ToolExecutionComponent } = await import(piEntry);
-const theme = { bold: (s) => s, fg: (_color, s) => s };
+const { Container, Spacer, truncateToWidth, visibleWidth, stripTerminalSequences } = await import(tuiEntry.href) as typeof import("@earendil-works/pi-tui");
+const { renderLayoutFrame, getLayoutBoxesAt } = await import(new URL("./layout.js", tuiEntry).href) as typeof import("../node_modules/@earendil-works/pi-tui/dist/layout.js");
+const { createChatViewport } = await import(new URL("./modes/interactive/chat-viewport.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/chat-viewport.js");
+const { UserMessageComponent } = await import(new URL("./modes/interactive/components/user-message.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/user-message.js");
+const { AssistantMessageComponent } = await import(new URL("./modes/interactive/components/assistant-message.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/assistant-message.js");
+const { initTheme } = await import(new URL("./modes/interactive/theme/theme.js", piEntry).href) as typeof import("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js");
+const { ToolExecutionComponent } = await import(piEntry) as typeof import("@earendil-works/pi-coding-agent");
+const theme: import("../ui/types.js").Palette = { bold: (s) => s, fg: (_color, s) => s };
 const measure = { truncateToWidth, visibleWidth };
-const content = (lines) => ({ render: () => lines, invalidate() {} });
+const content = (lines: string[]) => ({ render: () => lines, invalidate() {} });
 
-function scene(width, height, messages, resources = []) {
+function scene(width: number, height: number, messages: string[], resources: string[] = []) {
   const document = new Container();
   const headerContainer = new Container();
   document.addChild(headerContainer);
@@ -32,10 +33,10 @@ function scene(width, height, messages, resources = []) {
   const pendingMessages = content([]);
   const status = content([]);
   const widgetsAbove = new Spacer(1);
-  const editor = { render: (columns) => ["─".repeat(columns), "> ", "─".repeat(columns)], invalidate() {} };
+  const editor = { render: (columns: number) => ["─".repeat(columns), "> ", "─".repeat(columns)], invalidate() {} };
   const widgetsBelow = content([]);
   const state = { model: { id: "gpt-6.1-sol" }, thinking: "medium", cwd: process.cwd() };
-  const tui = { mode: "fullscreen", terminal: { rows: height, columns: width }, requestRender() {} };
+  const tui = { children: [] as import("@earendil-works/pi-tui").Component[], mode: "fullscreen", terminal: { rows: height, columns: width }, requestRender() {} };
   const footer = createFooter(
     { cwd: process.cwd() },
     tui, theme,
@@ -70,7 +71,7 @@ test("transcript siblings render once per frame, including the first frame and o
         renders = 0; const lines = view.render();
         assert.equal(renders, count, "measuring the header gap must reuse this frame's transcript output");
         assert.equal(lines.length, height);
-        assert.ok(lines.some((line) => line.trim() === `Message ${count - 1}`));
+        assert.ok(lines.some((line: string) => line.trim() === `Message ${count - 1}`));
       }
     } finally { view.header.dispose(); }
     assert.equal(view.document.render, view.nativeDocumentRender);
@@ -79,9 +80,9 @@ test("transcript siblings render once per frame, including the first frame and o
 
 test("frame sharing preserves width-specific results, fresh frames, errors and render ownership", () => {
   let calls = 0, value = "first", fail = false;
-  const child = { render(width) { calls++; if (fail) throw new Error("fixture render failure"); return [`${value}:${width}`]; } };
+  const child = { invalidate() {}, render(width: number) { calls++; if (fail) throw new Error("fixture render failure"); return [`${value}:${width}`]; } };
   const render = child.render;
-  const document = { children: [child], render(width) { return [...child.render(width), ...child.render(width), ...child.render(width + 1)]; } };
+  const document = { invalidate() {}, children: [child], render(width: number) { return [...child.render(width), ...child.render(width), ...child.render(width + 1)]; } };
   const native = document.render, restore = shareTranscriptFrame(document);
   assert.deepEqual(document.render(20), ["first:20", "first:20", "first:21"]); assert.equal(calls, 2);
   assert.equal(child.render, render);
@@ -96,15 +97,15 @@ test("frame sharing preserves width-specific results, fresh frames, errors and r
 test("header measurements track streaming, compaction and a changing input dock without stale heights", () => {
   const messages = ["Old response"], view = scene(80, 24, messages);
   try {
-    assert.equal(view.render().findIndex((line) => line.trim() === "Old response"), 18);
+    assert.equal(view.render().findIndex((line: string) => line.trim() === "Old response"), 18);
     messages.push("Streamed line", "Newest response");
     let lines = view.render();
-    assert.equal(lines.findIndex((line) => line.trim() === "Newest response"), 18);
+    assert.equal(lines.findIndex((line: string) => line.trim() === "Newest response"), 18);
     view.editor.render = (width) => ["─".repeat(width), "> ", "input line 2", "input line 3", "─".repeat(width)];
-    lines = view.render(); assert.equal(lines.findIndex((line) => line.trim() === "Newest response"), 16);
+    lines = view.render(); assert.equal(lines.findIndex((line: string) => line.trim() === "Newest response"), 16);
     messages.splice(0, messages.length, "Compacted response");
-    lines = view.render(); assert.equal(lines.findIndex((line) => line.trim() === "Compacted response"), 16);
-    assert.ok(!lines.some((line) => line.includes("Old response") || line.includes("Newest response")));
+    lines = view.render(); assert.equal(lines.findIndex((line: string) => line.trim() === "Compacted response"), 16);
+    assert.ok(!lines.some((line: string|string[]) => line.includes("Old response") || line.includes("Newest response")));
     messages.length = 0; lines = view.render(); assert.equal(lines[1].slice(2, 10), "██████  ");
   } finally { view.header.dispose(); }
 });
@@ -112,7 +113,7 @@ test("header measurements track streaming, compaction and a changing input dock 
 test("regular mode keeps native document rendering after a fullscreen header is replaced", () => {
   const view = scene(80, 24, ["Regular transcript"]);
   view.header.dispose();
-  const container = view.document.children[0], previous = container.children.indexOf(view.header);
+  const container = view.document.children[0] as InstanceType<typeof Container>, previous = container.children.indexOf(view.header);
   view.tui.mode = "regular";
   const header = createHeader(view.tui, measure, {
     version: "fixture", getModel: () => ({ id: "fixture" }), getThinkingLevel: () => "medium",
@@ -121,14 +122,14 @@ test("regular mode keeps native document rendering after a fullscreen header is 
   try {
     assert.equal(view.document.render, view.nativeDocumentRender);
     const lines = view.document.render(80).map(stripTerminalSequences);
-    assert.ok(lines.some((line) => line.includes("Regular transcript")));
+    assert.ok(lines.some((line: string|string[]) => line.includes("Regular transcript")));
     assert.ok(lines.length < 24, "regular mode must not insert fullscreen spacer rows");
   } finally { header.dispose(); }
 });
 
 test("terminal chrome pins its title, clears Windows progress, and restores methods on disposal", () => {
-  const titles = [], progress = [];
-  const terminal = { setTitle(title) { titles.push(title); }, setProgress(active) { progress.push(active); } };
+  const titles = [], progress: boolean[] = [];
+  const terminal = { setTitle(title: string) { titles.push(title); }, setProgress(active: boolean) { progress.push(active); } };
   const originalTitle = terminal.setTitle, originalProgress = terminal.setProgress;
   const restore = pinTerminalTitle(terminal, "win32");
   assert.deepEqual(progress, [false], "clear a progress keepalive that started before the extension mounted");
@@ -145,8 +146,8 @@ test("terminal chrome pins its title, clears Windows progress, and restores meth
 });
 
 test("terminal chrome preserves non-Windows progress and does not undo a newer terminal owner", () => {
-  for (const platform of ["linux", "darwin"]) {
-    const progress = [], terminal = { setTitle() {}, setProgress(value) { progress.push(value); } };
+  for (const platform of ["linux", "darwin"] as const) {
+    const progress: boolean[] = [], terminal = { setTitle() {}, setProgress(value: boolean) { progress.push(value); } };
     const original = terminal.setProgress, restore = pinTerminalTitle(terminal, platform);
     assert.equal(terminal.setProgress, original);
     terminal.setProgress(true); assert.deepEqual(progress, [true]);
@@ -174,7 +175,7 @@ test("short conversation sits directly above the editor with the logo at the top
   assert.equal(lines[18].trim(), "Pi: hello");
   assert.equal(lines[21].trim(), ">");
   assert.ok(lines.every((line) => visibleWidth(line) <= 80));
-  assert.ok(lines.every((line) => !line.includes("$")));
+  assert.ok(lines.every((line: string|string[]) => !line.includes("$")));
 });
 
 test("narrow terminals and resize keep every line within the screen", () => {
@@ -183,15 +184,15 @@ test("narrow terminals and resize keep every line within the screen", () => {
     const lines = view.render();
     assert.equal(lines.length, height);
     assert.ok(lines.every((line) => visibleWidth(line) <= width));
-    assert.ok(lines.some((line) => line.includes(">")));
+    assert.ok(lines.some((line: string|string[]) => line.includes(">")));
   }
 });
 
 test("long transcripts show the newest messages and leave the editor visible", () => {
   const view = scene(80, 24, Array.from({ length: 70 }, (_, i) => `Message ${i}`));
   const lines = view.render();
-  assert.ok(lines.some((line) => line.trim() === "Message 69"));
-  assert.ok(lines.some((line) => line.trim() === ">"));
+  assert.ok(lines.some((line: string) => line.trim() === "Message 69"));
+  assert.ok(lines.some((line: string) => line.trim() === ">"));
   assert.equal(lines.length, 24);
 });
 
@@ -200,16 +201,16 @@ test("resizing the same viewport recalculates space above the conversation", () 
   view.render();
   view.tui.terminal.rows = 36;
   const larger = view.render();
-  assert.equal(larger.findIndex((line) => line.trim() === "hello"), 30);
+  assert.equal(larger.findIndex((line: string) => line.trim() === "hello"), 30);
   view.tui.terminal.rows = 16;
   const smaller = view.render();
-  assert.equal(smaller.findIndex((line) => line.trim() === "hello"), 10);
+  assert.equal(smaller.findIndex((line: string) => line.trim() === "hello"), 10);
 });
 
 test("footer shows auto mode at the left without the working folder or branch", () => {
   const view = scene(80, 24, []);
   assert.equal(stripTerminalSequences(view.footer.render(80)[0]), "  auto mode");
-  assert.equal(view.render().at(-1).trim(), "auto mode");
+  assert.equal(view.render().at(-1)!.trim(), "auto mode");
   view.footer.dispose();
 });
 
@@ -220,16 +221,16 @@ test("header reflects model, effort, and working directory changes", () => {
   view.state.thinking = "high";
   view.state.cwd = "C:\\projects\\another-project";
   const lines = view.render();
-  assert.ok(lines.some((line) => line.includes("GPT-6-Astra with high effort")));
-  assert.ok(!lines.some((line) => line.includes("with medium effort")));
-  assert.ok(lines.some((line) => line.includes(view.state.cwd)));
+  assert.ok(lines.some((line: string|string[]) => line.includes("GPT-6-Astra with high effort")));
+  assert.ok(!lines.some((line: string|string[]) => line.includes("with medium effort")));
+  assert.ok(lines.some((line: string|string[]) => line.includes(view.state.cwd)));
 });
 
 test("startup resource listing is hidden and restored when the header is disposed", () => {
   const view = scene(80, 24, ["User: hello"], ["[Skills]", "long list of skills", "[Extensions]"]);
   const lines = view.render();
-  assert.ok(!lines.some((line) => line.includes("[Skills]")));
-  assert.ok(lines.some((line) => line.includes("User: hello")));
+  assert.ok(!lines.some((line: string|string[]) => line.includes("[Skills]")));
+  assert.ok(lines.some((line: string|string[]) => line.includes("User: hello")));
   view.header.dispose();
   assert.equal(view.document.children[1], view.resourceList);
 });
@@ -242,7 +243,7 @@ test("command overlays render their standalone header and close without a chat t
   let closed = false;
   const panel = createCommandPanel({
     title: "Activity", tui: { terminal: { rows: 24 }, requestRender() {} }, theme: palette,
-    measure: { ...await import(tuiEntry.href) }, done: () => { closed = true; },
+    measure: { ...await import(tuiEntry.href) as typeof import("@earendil-works/pi-tui") }, done: () => { closed = true; },
     load: async () => "Activity loaded", renderBody: (value) => [value],
     renderHeader: (width) => header.render(width),
   });
@@ -265,8 +266,8 @@ test("command overlays render their standalone header and close without a chat t
 test("user cards have uncolored gaps around compact tool groups without shifting tool hit targets", () => {
   initTheme("dark", false);
   const user = new UserMessageComponent("Inspect the project"), nextUser = new UserMessageComponent("Continue");
-  const tool = (id) => {
-    const component = new ToolExecutionComponent("read", id, { path: "src/main.ts" }, { showImages: false }, undefined, { requestRender() {} }, process.cwd());
+  const tool = (id: string) => {
+    const component = new ToolExecutionComponent("read", id, { path: "src/main.ts" }, { showImages: false }, undefined, ({ requestRender() {} } as unknown as ConstructorParameters<typeof ToolExecutionComponent>[5]), process.cwd());
     component.updateResult({ content: [{ type: "text", text: "Tool details" }], isError: false });
     return component;
   };
@@ -276,38 +277,38 @@ test("user cards have uncolored gaps around compact tool groups without shifting
     for (const width of [80, 24, 8, 1, 80, 80]) {
       style.apply(chat, width);
       const before = user.render(width), after = nextUser.render(width);
-      assert.equal(stripTerminalSequences(before.at(-1)), "");
+      assert.equal(stripTerminalSequences(before.at(-1)!), "");
       assert.equal(stripTerminalSequences(after[0]), "");
-      assert.ok(!before.at(-1).includes("\x1b[48;")); assert.ok(!after[0].includes("\x1b[48;"));
+      assert.ok(!before.at(-1)!.includes("\x1b[48;")); assert.ok(!after[0].includes("\x1b[48;"));
       assert.equal(user.children.length, 3); assert.equal(nextUser.children.length, 3);
       assert.equal(first.render(width).length, 1); assert.equal(second.render(width).length, 1);
       assert.ok(chat.render(width).every((line) => visibleWidth(line) <= width));
     }
     const lines = chat.render(80).map(stripTerminalSequences);
-    const firstLine = lines.findIndex((line) => line.includes("▸ read"));
+    const firstLine = lines.findIndex((line: string|string[]) => line.includes("▸ read"));
     assert.equal(lines[firstLine - 1], ""); assert.match(lines[firstLine + 1], /▸ read/);
-    first.handleMouse({ type: "click", button: "left", x: 3, y: 0, width: 80, height: 1 });
+    first.handleMouse({screenX: 0, screenY: 0, shift: false, alt: false, ctrl: false,  type: "click", button: "left", x: 3, y: 0, width: 80, height: 1 });
     assert.ok(first.render(80).join("\n").includes("Tool details"));
     user.setOutputPad(0); style.apply(chat, 80); assert.equal(user.children.length, 3);
     chat.removeChild(first); chat.removeChild(second); style.apply(chat, 80);
     assert.ok(nextUser.render(80)[0].includes("\x1b[48;"), "remove the leading gap when the preceding activity disappears");
     chat.removeChild(nextUser); style.apply(chat, 80); assert.equal(nextUser.children.length, 1);
   } finally { style.dispose(); }
-  assert.equal(user.children.length, 1); assert.equal(user.outputPad, 1);
+  assert.equal(user.children.length, 1); assert.equal((user as unknown as { outputPad: number }).outputPad, 1);
 });
 
 test("shared transcript measurements preserve native mouse layout through tool expansion and resize", () => {
   initTheme("dark", false);
   const view = scene(80, 36, []), chat = new Container();
   const user = new UserMessageComponent("Inspect **Pi** — 日本語 👋");
-  const assistant = new AssistantMessageComponent({ content: [{ type: "text", text: "Streaming response" }] });
+  const assistant = new AssistantMessageComponent(assistantFixture([{ type: "text", text: "Streaming response" }]));
   const tool = new ToolExecutionComponent("read", "mouse-frame", { path: "src/main.ts" }, { showImages: false }, undefined,
-    { requestRender() {} }, process.cwd());
+    ({ requestRender() {} } as unknown as ConstructorParameters<typeof ToolExecutionComponent>[5]), process.cwd());
   tool.updateResult({ content: [{ type: "text", text: "Visible tool details" }], isError: false });
   chat.addChild(user); chat.addChild(assistant); chat.addChild(tool);
   view.document.children[view.document.children.length - 1] = chat;
   const clickTool = () => {
-    const frame = view.frame(), row = frame.lines.map(stripTerminalSequences).findIndex((line) => /[▸▾] read/.test(line));
+    const frame = view.frame(), row = frame.lines.map(stripTerminalSequences).findIndex((line: string) => /[▸▾] read/.test(line));
     assert.ok(row >= 0);
     const box = getLayoutBoxesAt(frame, 3, row).find((item) => item.component === view.document);
     assert.ok(box);
@@ -318,15 +319,15 @@ test("shared transcript measurements preserve native mouse layout through tool e
   try {
     for (const width of [80, 24, 80]) {
       view.tui.terminal.columns = width;
-      clickTool(); assert.equal(tool.expanded, true);
-      assert.ok(view.render().some((line) => line.includes("Visible tool details")));
-      clickTool(); assert.equal(tool.expanded, false);
-      assert.ok(!view.render().some((line) => line.includes("Visible tool details")));
-      assistant.updateContent({ content: [{ type: "text", text: `New response at ${width}` }] }, true);
-      assert.ok(view.render().some((line) => line.includes(`New response at ${width}`)));
+      clickTool(); assert.equal((tool as unknown as { expanded: boolean }).expanded, true);
+      assert.ok(view.render().some((line: string|string[]) => line.includes("Visible tool details")));
+      clickTool(); assert.equal((tool as unknown as { expanded: boolean }).expanded, false);
+      assert.ok(!view.render().some((line: string|string[]) => line.includes("Visible tool details")));
+      assistant.updateContent(assistantFixture([{ type: "text", text: `New response at ${width}` }]), true);
+      assert.ok(view.render().some((line: string|string[]) => line.includes(`New response at ${width}`)));
       assert.ok(view.frame().lines.every((line) => visibleWidth(line) <= width));
       assert.ok(user.render(width)[0].startsWith("\x1b]133;A\x07"));
-      assert.ok(user.render(width).at(-1).includes("\x1b]133;C\x07"));
+      assert.ok(user.render(width).at(-1)!.includes("\x1b]133;C\x07"));
     }
   } finally { view.header.dispose(); }
 });
@@ -334,7 +335,7 @@ test("shared transcript measurements preserve native mouse layout through tool e
 test("native messages keep Markdown, streaming, and terminal zones with aligned gray user messages", () => {
   initTheme("dark", false);
   const user = new UserMessageComponent("Hello **Pi**\n\n```js\nconst x = 1;\n```\n\nПривет");
-  const assistant = new AssistantMessageComponent({ content: [{ type: "text", text: "Working…" }] });
+  const assistant = new AssistantMessageComponent(assistantFixture([{ type: "text", text: "Working…" }]));
   const chat = new Container();
   chat.addChild(user);
   chat.addChild(assistant);
@@ -342,25 +343,25 @@ test("native messages keep Markdown, streaming, and terminal zones with aligned 
   for (const width of [80, 24, 8, 80]) {
     style.apply(chat, width);
     const userLines = user.render(width);
-    assert.ok(userLines.some((line) => line.includes("\x1b[48;2;32;32;32m")));
-    assert.ok(userLines.some((line) => line.includes("\x1b[38;2;237;237;237m")));
+    assert.ok(userLines.some((line: string|string[]) => line.includes("\x1b[48;2;32;32;32m")));
+    assert.ok(userLines.some((line: string|string[]) => line.includes("\x1b[38;2;237;237;237m")));
     assert.ok(userLines[0].startsWith("\x1b]133;A\x07"));
-    assert.ok(userLines.at(-1).includes("\x1b]133;C\x07"));
+    assert.ok(userLines.at(-1)!.includes("\x1b]133;C\x07"));
     assert.ok(userLines.every((line) => visibleWidth(line) <= width));
     assert.ok(assistant.render(width).every((line) => visibleWidth(line) <= width));
     if (width >= 24) {
-      assert.ok(userLines.map(stripTerminalSequences).some((line) => line.startsWith("  Hello Pi")));
-      assert.ok(userLines.map(stripTerminalSequences).some((line) => line.includes("const x = 1;")));
+      assert.ok(userLines.map(stripTerminalSequences).some((line: string) => line.startsWith("  Hello Pi")));
+      assert.ok(userLines.map(stripTerminalSequences).some((line: string|string[]) => line.includes("const x = 1;")));
     }
   }
-  assistant.updateContent({ content: [{ type: "text", text: "Finished response" }] }, true);
-  assert.ok(assistant.render(80).map(stripTerminalSequences).some((line) => line.startsWith("  Finished response")));
-  assert.ok(!assistant.render(80).some((line) => line.includes("\x1b[48;2;32;32;32m")));
+  assistant.updateContent(assistantFixture([{ type: "text", text: "Finished response" }]), true);
+  assert.ok(assistant.render(80).map(stripTerminalSequences).some((line: string) => line.startsWith("  Finished response")));
+  assert.ok(!assistant.render(80).some((line: string|string[]) => line.includes("\x1b[48;2;32;32;32m")));
   user.setOutputPad(1); // Native theme/settings changes rebuild message children.
   style.apply(chat, 80);
-  assert.ok(user.render(80).some((line) => line.includes("\x1b[48;2;32;32;32m")));
+  assert.ok(user.render(80).some((line: string|string[]) => line.includes("\x1b[48;2;32;32;32m")));
   style.dispose();
-  assert.equal(user.outputPad, 1);
-  assert.equal(assistant.outputPad, 1);
-  assert.ok(!user.render(80).some((line) => line.includes("\x1b[48;2;32;32;32m")));
+  assert.equal((user as unknown as { outputPad: number }).outputPad, 1);
+  assert.equal((assistant as unknown as { outputPad: number }).outputPad, 1);
+  assert.ok(!user.render(80).some((line: string|string[]) => line.includes("\x1b[48;2;32;32;32m")));
 });

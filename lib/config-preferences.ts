@@ -1,3 +1,4 @@
+import type { SettingItem } from "@earendil-works/pi-tui";
 import type { Palette } from "../ui/types.js";
 
 // Shared by the bundled host and extensions loaded through jiti.
@@ -10,6 +11,10 @@ export interface ConfigPreferences {
   applyPendingChange(): void;
   dispose(): void;
 }
+export interface ExtraConfigPreferences {
+  items: SettingItem[];
+  onChange(id: string, value: string): string | void;
+}
 export interface ConfigPreferencesUI {
-  [CONFIG_PREFERENCES]?: () => ConfigPreferences;
+  [CONFIG_PREFERENCES]?: (extra?: ExtraConfigPreferences) => ConfigPreferences;
 }

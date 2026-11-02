@@ -1,3 +1,4 @@
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -10,11 +11,11 @@ import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-codin
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const manifest = { type: "module", pi: { extensions: ["./dist/extensions/current.js"] } };
-function fixture(t) {
+function fixture(t: TestContext) {
   const base = join(repository, ".local/build-tests"); mkdirSync(base, { recursive: true });
   const root = mkdtempSync(join(base, "case-"));
   t.after(() => { assert.ok(resolve(root).startsWith(resolve(base) + sep)); rmSync(root, { recursive: true, force: true }); });
-  const write = (name, text) => { mkdirSync(join(root, name, ".."), { recursive: true }); writeFileSync(join(root, name), text); };
+  const write = (name: string, text: string|NodeJS.ArrayBufferView<ArrayBufferLike>) => { mkdirSync(join(root, name, ".."), { recursive: true }); writeFileSync(join(root, name), text); };
   write("package.json", JSON.stringify(manifest));
   write("tsconfig.json", JSON.stringify({ compilerOptions: {
     target: "ES2023", module: "NodeNext", moduleResolution: "NodeNext", rootDir: ".", outDir: "dist",
@@ -22,7 +23,7 @@ function fixture(t) {
   }, include: ["bin/**/*.ts", "extensions/**/*.ts", "lib/**/*.ts"] }));
   write("extensions/current.ts", "export default function current() {}\n");
   write("bin/main.ts", "export const current = true;\n");
-  const run = (executable, args, options) => captureCommand(executable, args, { ...options, encoding: "utf8" });
+  const run: import("../scripts/build.mjs").BuildRunner = (executable, args, options) => captureCommand(executable, args, { ...options, encoding: "utf8" });
   return { root, write, compile: (options = {}) => build({ root, run, ...options }) };
 }
 
@@ -69,7 +70,7 @@ test("build cleanup refuses redirected output directories", (t) => {
   const f = fixture(t), outside = fixture(t);
   outside.write("keep.txt", "must survive");
   try { symlinkSync(outside.root, join(f.root, "dist"), process.platform === "win32" ? "junction" : "dir"); }
-  catch (error) { if (["EPERM", "EACCES", "ENOSYS"].includes(error.code)) { t.skip("Symlink creation is unavailable"); return; } throw error; }
+  catch (error) { if (["EPERM", "EACCES", "ENOSYS"].includes((error as NodeJS.ErrnoException).code ?? "")) { t.skip("Symlink creation is unavailable"); return; } throw error; }
   assert.throws(() => f.compile(), /Refusing redirected/);
   assert.equal(readFileSync(join(outside.root, "keep.txt"), "utf8"), "must survive");
 });
@@ -82,7 +83,7 @@ test("artifact policy requires an explicit extension list and rejects stale or d
   const files = ["bin/pi.mjs", "dist/bin/main.js", "dist/bin/verify-runtime.js", "dist/extensions/current.js", "dist/extensions/current.js.map", "README.md", "CHANGELOG.md", "LICENSE"];
   assert.doesNotThrow(() => assertPackageFiles(files, manifest));
   for (const name of ["dist/extensions/retired.js", "dist/extensions/retired.js.map", "dist/lib/performance.js", "dist/ui/performance-view.js", "dist/dev/performance/extension.js", "dev/performance/README.md", ".local/dev-dist/extension.js", "auth.json", "docs/out/index.html"]) {
-    assert.throws(() => assertPackageFiles([...files, name], manifest), undefined, name);
+    assert.throws(() => assertPackageFiles([...files, name], manifest), /./, name);
   }
   assert.throws(() => assertPackageFiles(files.filter((name) => name !== "dist/extensions/current.js"), manifest), /Missing production extension/);
 });

@@ -1,21 +1,30 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { commandName, removedCommand, removedCommandMessage } from "../lib/command-policy.js";
+import { commandName, redirectedCommand, removedCommand, removedCommandMessage } from "../lib/command-policy.js";
 import type { Runtime } from "./runtime.js";
 import { CONFIG_PREFERENCES } from "../lib/config-preferences.js";
-import type { ConfigPreferences, ConfigPreferencesUI } from "../lib/config-preferences.js";
-import type { SettingsListTheme } from "@earendil-works/pi-tui";
+import { appearanceTheme, forgetAppearanceTheme, rememberAppearanceTheme } from "../lib/appearance.js";
+import type { ConfigPreferences, ConfigPreferencesUI, ExtraConfigPreferences } from "../lib/config-preferences.js";
+import type { SettingItem, SettingsListTheme } from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
+import { keepSessionChrome } from "./chrome-interface.js";
 import { installModelInterface } from "./model-interface.js";
 import { installAuthInterface } from "./auth-interface.js";
 import type { AuthInterfaceApi } from "./auth-interface.js";
 import type { ModelInterfaceApi } from "./model-interface.js";
+import type { ChromeRuntimeApi } from "./chrome-interface.js";
 import type { Measure } from "../ui/types.js";
 
 type Submit = (text: string) => unknown;
 interface Command { name: string; invocationName?: string }
+interface ThemeController {
+  applyFromSettings(...args: unknown[]): unknown;
+  setThemeInstance(theme: unknown): unknown;
+}
 interface CommandHost {
+  themeController?: ThemeController;
+  showWarning(text: string): void;
   defaultEditor: { onSubmit?: Submit };
   editor: { setText(text: string): void };
   createBaseAutocompleteProvider(): { commands: Command[] };
@@ -26,6 +35,8 @@ interface CommandHost {
   showSelector(create: (done: () => void) => { component: { getSettingsList(): NativeSettingsList } }): void;
 }
 interface NativeSettingsList {
+  items: SettingItem[];
+  updateValue(id: string, value: string): void;
   render(width: number): string[];
   handleInput(data: string): void;
   maxVisible: number;
@@ -47,13 +58,15 @@ export interface CommandRuntimeApi {
 }
 
 const installed = new WeakSet<object>();
+/** Pi words this startup warning; our header reports the same state in one line. */
+export const NO_MODELS_WARNING = "No models available.";
 
 /** Runtime-only adapters: never edit upstream files or duplicate its settings callbacks. */
 export function installCommandPolicy(api: CommandRuntimeApi) {
   const ui = api.InteractiveMode?.prototype;
   const runner = api.ExtensionRunner?.prototype;
   const session = api.AgentSession?.prototype;
-  for (const method of [ui?.createBaseAutocompleteProvider, ui?.setupEditorSubmitHandler, ui?.showSettingsSelector, ui?.createExtensionUIContext,
+  for (const method of [ui?.createBaseAutocompleteProvider, ui?.setupEditorSubmitHandler, ui?.showSettingsSelector, ui?.createExtensionUIContext, ui?.showWarning,
     runner?.getRegisteredCommands, runner?.getCommand, session?.prompt]) {
     if (typeof method !== "function") throw new Error("This Pi engine does not support the command-menu adapter.");
   }
@@ -77,7 +90,9 @@ export function installCommandPolicy(api: CommandRuntimeApi) {
         this.showStatus(removedCommandMessage(name));
         return;
       }
-      return submit(text);
+      // Pi claims /new before extension commands are consulted; hand it to ours.
+      const redirect = redirectedCommand(text);
+      return submit(redirect ?? text);
     };
   };
   const commands = runner.getRegisteredCommands;
@@ -97,17 +112,52 @@ export function installCommandPolicy(api: CommandRuntimeApi) {
     if (name && removedCommand(name)) return Promise.reject(new Error(removedCommandMessage(name)));
     return prompt.call(this, text, options);
   };
+  // The header states the same thing in one line, without the engine's two
+  // documentation paths. Every other startup warning is left untouched.
+  const warn = ui.showWarning;
+  ui.showWarning = function (text) {
+    if (typeof text === "string" && text.startsWith(NO_MODELS_WARNING)) return;
+    return warn.call(this, text);
+  };
   const createUI = ui.createExtensionUIContext;
   ui.createExtensionUIContext = function () {
     const context = createUI.call(this);
-    context[CONFIG_PREFERENCES] = () => captureConfigPreferences(this);
+    context[CONFIG_PREFERENCES] = (extra) => captureConfigPreferences(this, extra);
+    // Extensions bind on every session replacement, before Pi reapplies its
+    // settings theme, so this is where the live controller can be reached.
+    keepAppearanceTheme(this);
     return context;
   };
   installed.add(ui);
 }
 
+const themed = new WeakSet<object>();
+
+/**
+ * Pi rebuilds its theme from settings whenever a session is replaced, which
+ * discards the in-memory theme carrying the chosen appearance and repaints the
+ * screen in different colors. Put ours back immediately after, so `/clear`,
+ * `/new`, `/resume` and a reload keep the colors the user selected.
+ *
+ * The controller is an instance field rather than an exported class, so it is
+ * reached through the host this interface already adapts.
+ */
+export function keepAppearanceTheme(host: CommandHost) {
+  const controller = host.themeController;
+  if (!controller || typeof controller.applyFromSettings !== "function"
+    || typeof controller.setThemeInstance !== "function" || themed.has(controller)) return;
+  const native = controller.applyFromSettings;
+  controller.applyFromSettings = function (this: ThemeController, ...args: unknown[]) {
+    const result = native.apply(this, args);
+    const theme = appearanceTheme();
+    if (theme) this.setThemeInstance(theme);
+    return result;
+  };
+  themed.add(controller);
+}
+
 /** Reuse every native item and save callback, without mounting the native menu. */
-export function captureConfigPreferences(host: CommandHost): ConfigPreferences {
+export function captureConfigPreferences(host: CommandHost, extra?: ExtraConfigPreferences): ConfigPreferences {
   let list: NativeSettingsList | undefined, cancelled = false, pending: (() => void) | undefined;
   const originalSelector = host.showSelector;
   try {
@@ -118,8 +168,20 @@ export function captureConfigPreferences(host: CommandHost): ConfigPreferences {
     throw new Error("Pi preferences are incompatible with the configuration screen.");
   }
   const settings = list;
+  if (extra) {
+    if (!Array.isArray(settings.items) || typeof settings.updateValue !== "function") {
+      throw new Error("Pi preferences cannot accept additional configuration items.");
+    }
+    // The unfiltered list shares this array; subsequent searches use items too.
+    settings.items.push(...extra.items);
+  }
   const change = settings.onChange;
   settings.onChange = (id, value) => {
+    if (extra?.items.some((item) => item.id === id)) {
+      const saved = extra.onChange(id, value);
+      if (saved !== undefined) settings.updateValue(id, saved);
+      return;
+    }
     // Changing renderers requires the overlay to close before invoking Pi's callback.
     if (id === "tui-mode") pending = () => change(id, value);
     else change(id, value);
@@ -157,6 +219,7 @@ export async function prepareRuntimeCommands(runtime: Runtime) {
   if (!existsSync(bundle)) throw new Error("Pi engine is missing its bundled command API.");
   const api = await import(pathToFileURL(bundle).href) as CommandRuntimeApi;
   installCommandPolicy(api);
+  keepSessionChrome(api as unknown as ChromeRuntimeApi);
   const require = createRequire(pathToFileURL(runtime.entry));
   const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href) as Measure;
   installModelInterface(api as unknown as ModelInterfaceApi, measure, runtime.version);
@@ -181,18 +244,43 @@ export async function verifyCommandPolicy(api: CommandRuntimeApi) {
     || !provider.commands.some((command) => command.name === "model")) {
     throw new Error("Pi command-menu filtering is incompatible.");
   }
-  let settingsOpened = false, removedNotice = false, submitted = "";
+  let settingsOpened = false, removedNotice = false;
+  const submissions: string[] = [];
   host.defaultEditor = {};
   host.editor = { setText() {} };
   host.showStatus = () => { removedNotice = true; };
   host.showSettingsSelector = () => { settingsOpened = true; };
+  // Only the no-models startup warning is suppressed; every other one must still reach the chat.
+  const warned: unknown[] = [];
+  Object.assign(host, {
+    chatContainer: { children: [], addChild: (child: unknown) => warned.push(child) },
+    ui: { requestRender() {} },
+  });
+  host.showWarning(`${NO_MODELS_WARNING} Use /login to log into a provider.`);
+  if (warned.length) throw new Error("Pi still shows the no-models startup warning.");
+  host.showWarning("Compatibility probe warning");
+  if (!warned.length) throw new Error("Pi no longer shows startup warnings.");
   host.setupEditorSubmitHandler();
   await host.defaultEditor.onSubmit!("/settings");
   if (!removedNotice || settingsOpened) throw new Error("Pi still executes removed commands.");
   // /config must reach our extension rather than mount the native settings menu.
-  Object.assign(host, { flushPendingBashComponents() {}, onInputCallback: (text: string) => { submitted = text; } });
+  Object.assign(host, { flushPendingBashComponents() {}, onInputCallback: (text: string) => { submissions.push(text); } });
   await host.defaultEditor.onSubmit!("/config");
-  if (settingsOpened || submitted !== "/config") throw new Error("Pi bypasses the custom configuration screen.");
+  if (settingsOpened || submissions.at(-1) !== "/config") throw new Error("Pi bypasses the custom configuration screen.");
+  // /new must reach our /clear instead of Pi's own session handler.
+  await host.defaultEditor.onSubmit!("/new");
+  if (submissions.at(-1) !== "/clear") throw new Error("Pi still claims /new before this interface.");
+  // A replacement session must not be left with Pi's settings theme.
+  const applied: unknown[] = [];
+  const controller = { applyFromSettings() { applied.push("settings"); }, setThemeInstance: (value: unknown) => applied.push(value) };
+  Object.defineProperty(host, "themeController", { configurable: true, writable: true, value: controller });
+  keepAppearanceTheme(host);
+  const chosen = { name: "pi-extended-appearance" };
+  rememberAppearanceTheme(chosen);
+  try {
+    controller.applyFromSettings();
+    if (applied[0] !== "settings" || applied[1] !== chosen) throw new Error("Pi discards the selected appearance when a session is replaced.");
+  } finally { forgetAppearanceTheme(); }
   // Probe the settings-data bridge as well as command submission. Native data
   // and callbacks can change even when the old menu method still exists.
   api.initTheme("dark", false);
@@ -207,8 +295,13 @@ export async function verifyCommandPolicy(api: CommandRuntimeApi) {
     themeController: { getThemeSelection: () => "dark", getTerminalTheme: () => "dark" },
     ui: { mode: "fullscreen" }, chatContainer: { children: [] },
   });
-  const preferences = captureConfigPreferences(host);
+  const preferences = captureConfigPreferences(host, {
+    items: [{ id: "compat-extra", label: "Compatibility extra", currentValue: "off", values: ["off", "on"] }],
+    onChange: () => "off",
+  });
   try {
+    preferences.handleInput("Compatibility extra");
+    preferences.handleInput("\r");
     if (!preferences.render(80, 24, { fg: (_role, text) => text, bold: (text) => text }).length) {
       throw new Error("Pi configuration preferences are empty.");
     }

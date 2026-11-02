@@ -20,9 +20,12 @@ description: Slash commands and terminal commands available in Pi Extended Agent
 | `/permissions [mode]` | `full`, `ask`, or `read-only` |
 | `/memory` | View, edit, delete, and toggle project memory |
 | `/plan [goal]` | Start research, review a plan, and explicitly approve execution |
+| `/mode [auto\|plan\|code]` | Select a work mode; code adds native codemode alongside ordinary tools |
 | `/prompt [scope] [text]` | Preview instructions; edit session, project, or global additions |
 | `/model [query]` | Search models, select one, or save a default |
-| `/skills [query]` | List, search, preview, and install skills |
+| `/skills [query]` | Enable/disable installed skills with Space, search, preview, and install; close to apply changes |
+| `/agents [run NAME TASK\|stop]` | Browse, create, edit, run, and stop subagents |
+| `/clear` | Clear the conversation and start a new session (`/new` does the same) |
 
 Native Pi commands such as `/login`, `/logout`, `/new`, `/resume`, `/compact`,
 `/reload`, and `/quit` remain available.

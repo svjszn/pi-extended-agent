@@ -157,7 +157,9 @@ Run `pi update --help` for additional options.
 | `/plan [goal]` | Research a task, edit its plan, and explicitly approve execution |
 | `/prompt [scope]` | View the native system prompt and edit session, project, or global additions |
 | `/model [query]` | Search and select a model in the shared full-screen interface |
-| `/skills [query]` | Installed skills, skills.sh search, preview, and installation |
+| `/skills [query]` | Enable or disable installed skills, skills.sh search, preview, and installation |
+| `/agents [run NAME TASK]` | Configured subagents, with creation, editing, and direct runs |
+| `/clear` | Clears the conversation and starts a new session; `/new` is the same command |
 
 The commands open full terminal screens below the Pi header, aligned to its two-column inset. They have no enclosing border. Read-only screens show `esc to close` in the input row; `/skills` uses that row for search and filtering. Usage bars show the remaining allowance; configuration values align in columns. The shared white and gray palette lives in `ui/theme.ts`, ready for a future `/theme` command. Press **Escape** or **Enter** to close a read-only screen. Scroll with **↑/↓**, **Page Up/Down**, **Home/End**, or the mouse wheel. Opening a viewer does not call a model. Starting `/plan <goal>` or choosing Execute sends the corresponding task to the agent.
 
@@ -167,7 +169,7 @@ The commands open full terminal screens below the Pi header, aligned to its two-
 
 Statistics come from the active profile's local sessions, including the current session and a custom session directory. They include favorite model (by assistant response count), recorded tokens, session count, active days, most active day, and streaks. Session length is the span between its first and last recorded messages, including idle gaps. Token totals include reported tool, compaction, and summary usage; reasoning tokens are not added twice. Forked entries count once. Statistics cover all recorded history or the selected period, while the calendar uses local dates for the latest 365 days. Activity on other computers or in the Codex app is not included.
 
-`/config` opens the original Configuration overview, with Current session, Saved preferences, and Files in aligned columns. Press Tab to switch to the integrated Preferences tab in the same full-screen panel, keeping the header, footer, inset, and white/gray palette. Preferences include all settings previously available as `/settings`: themes, model defaults, effort defaults, transport, compaction, image handling, terminal behavior, and warnings. Use arrow keys to navigate, Enter to edit, and type to filter. Escape backs out of a submenu, returns to the overview, then closes the screen. Tab switches between the overview and preferences. Native save callbacks apply settings to the session; changing TUI mode briefly closes and reopens the panel so Pi can switch renderers safely. `/config info` remains an alias for the overview. Project preferences respect Pi's trust decision, and credentials are excluded. In print/RPC mode, `/config` shows the read-only overview.
+`/config` opens the original Configuration overview, with Current session, Saved preferences, and Files in aligned columns. Press Tab to switch to the integrated Preferences tab in the same full-screen panel, keeping the header, footer, inset, and white/gray palette. Preferences include all settings previously available as `/settings`: themes, model defaults, effort defaults, transport, compaction, image handling, terminal behavior, and warnings. Enable **Legacy logo** in Preferences to replace the header mark with the classic serif π; the choice is saved in the active profile and keeps the selected accent color. Use arrow keys to navigate, Enter to edit, and type to filter. Escape backs out of a submenu, returns to the overview, then closes the screen. Tab switches between the overview and preferences. Native save callbacks apply settings to the session; changing TUI mode briefly closes and reopens the panel so Pi can switch renderers safely. `/config info` remains an alias for the overview. Project preferences respect Pi's trust decision, and credentials are excluded. In print/RPC mode, `/config` shows the read-only overview.
 
 The command menu omits `/settings`, `/tree`, `/thinking`, `/scoped-models`, `/import`, `/export`, `/share`, `/bug`, `/copy`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/trust`, `/about-agent`, `/llama`, and `/mcp`. These commands are also rejected when entered manually. Use `/config` for preferences, `/effort` for session reasoning effort, and `/status` for engine and session information. The runtime adapter applies to both bundled and managed engines and is checked before engine updates activate. It does not modify upstream package files.
 
@@ -203,7 +205,7 @@ Notes live under the active profile's `pi-extended/projects/PROJECT_KEY/memory/`
 
 ### Plan before executing
 
-**Shift+Tab** in the chat input switches between normal mode (`auto mode` with Full access) and `plan mode`. Switching out pauses and preserves the plan; switching back restores the draft. It keeps your input text, effort, and permission choice. It does not start execution. Finish the current run and queued messages before switching. **Shift+Left/Right** decreases/increases reasoning effort through the current model's supported levels, stopping at the lowest/highest level; `/effort` also remains available. Inside command screens, Shift+Tab keeps its usual navigation behavior.
+**Shift+Tab** in the chat input cycles **auto → plan → code → auto** while idle. `/mode auto`, `/mode plan`, and `/mode code` select a mode directly. Code mode enables Pi's native `codemode` tool alongside ordinary tools and uses the same blue footer label as high effort. Leaving plan mode pauses and preserves the plan; returning restores the draft. It keeps your input text, effort, and permission choice. It does not start execution. Finish the current run and queued messages before switching. **Shift+Left/Right** decreases/increases reasoning effort through the current model's supported levels, stopping at the lowest/highest level; `/effort` also remains available. Inside command screens, Shift+Tab keeps its usual navigation behavior.
 
 Use `/plan <goal>` to start research, or open `/plan` and press **s** to enable planning before describing the task. The agent saves the goal, steps, affected areas, and checks with `update_plan`. The footer shows `plan mode`. A tool hook allows only built-in reading/search tools, memory reads, and our internal plan updates. Available built-in `find`, `grep`, and `ls` tools are temporarily activated so research works without shell access; the previous selection is restored on execution or cancellation. Changes, external tools, nested mutation calls, and shell commands are blocked even under Full access. Interactive/RPC user shell commands are also blocked while planning.
 
@@ -225,9 +227,10 @@ Compacted history and inactive branches are excluded. After compaction, Pi may r
 
 ### Find and install skills
 
-Open `/skills` for **Installed** and **Search** tabs, or enter `/skills react` to search immediately. The installed list comes from skills already loaded by Pi, including shared folders, configured paths, and packages. Type to filter it. In Search, type at least two characters to search [skills.sh](https://skills.sh/). A filled circle **●** marks a skill available in the current session; an empty circle **○** marks one that is not loaded. Results also show the source repository and install count. Descriptions appear when the catalog supplies them; the preview reads the description and full `SKILL.md` from GitHub.
+Open `/skills` for **Installed** and **Search** tabs, or enter `/skills react` to search immediately. The installed list includes enabled and disabled skills discovered by Pi, including shared folders, configured paths, and packages. Type to filter it. In Search, type at least two characters to search [skills.sh](https://skills.sh/). A filled circle **●** marks an enabled installed skill; an empty circle **○** marks a disabled skill or a catalog skill that is not installed. Results also show the source repository and install count. Descriptions appear when the catalog supplies them; the preview reads the description and full `SKILL.md` from GitHub.
 
 - **Tab / Shift+Tab** switches tabs; **↑/↓** selects a skill; **Enter** opens its preview.
+- In **Installed**, **Space** enables or disables the selected skill. The choice is saved in Pi's native resource settings at the skill's scope (global or project), including package filters. Disabled skills stay in the list and their files are not changed or deleted. Closing the screen reloads Pi to apply changes; command-line resource restrictions still take precedence. Disabling removes the skill from the available-skill prompt and commands, but does not erase text already read into the conversation.
 - In a new skill's preview, **Tab / ←/→** chooses **This project** or **All projects**, then **Enter** installs.
 - **Page Up/Down** and **↑/↓** scroll the preview; **Escape** goes back, closes the manager, or cancels an active download.
 - After installation, **Enter** returns to the chat and reloads Pi's skills without restarting the process.
@@ -250,6 +253,14 @@ pi --tui-mode regular
 pi --no-extensions
 ```
 
+### Delegate to subagents
+
+`/agents` lists the configured subagents, creates and edits them, and runs one directly with `/agents run NAME TASK`. A subagent is a separate agent run with its own instructions, tool selection, and context; it receives one task and returns a single report, so its intermediate work never enters your conversation. The model can delegate on its own with the `task` tool when a task is self-contained.
+
+Definitions are Markdown files with frontmatter, either in `.pi/agents/NAME.md` in the project or `AGENT_DIR/agents/NAME.md` in the profile. Project definitions shadow profile definitions with the same name and are ignored until Pi trusts the project. `description` tells the model when to delegate; `tools` is optional and narrows the selection by name or `*` pattern, where `tools: []` means none; `model` is optional and keeps the current model when absent. The body is added to Pi's own system prompt rather than replacing it. A definition that cannot be read is listed by name so the remaining agents keep working.
+
+A subagent never gets more access than the session has granted. It runs the same checks as your own tool calls: Full access runs without prompts, Ask before actions requires approval for each change, Read only and plan mode offer just the built-in read, find, grep, and ls tools, narrowed further to what the definition lists. In Ask mode the dialog names the subagent and offers **Deny**, **Allow once**, and **Allow for this run**; denial stays the default, the run-wide choice is never preselected, and one dialog appears at a time whether the request comes from your own call or a subagent. A subagent cannot ask questions, cannot start another subagent, does not load commands, project memory, or skills, is bounded to 100 tool calls, and writes no transcript to the profile.
+
 ## Development
 
 | File | Responsibility |
@@ -269,6 +280,8 @@ pi --no-extensions
 Source code uses TypeScript with `strict` enabled. Plain `npm ci` builds it through `prepare`; when using `npm ci --ignore-scripts`, run `npm run build` explicitly. Each build clears `dist/` before compiling, so deleted sources cannot leave stale JavaScript in a package. Pi loads only the explicit production extension files in `package.json`; unexpected extension output fails the build. Installed users do not need TypeScript or a build step. Development diagnostics live in `dev/`, compile separately with `npm run build:dev` into `.local/dev-dist/`, and are excluded from the npm package. Keep TypeScript paths in `tsconfig.json` aligned with the bundled Pi dependency; updated engines resolve their own modules at runtime.
 
 After editing source files, run `npm run build` before restarting a directly linked `pi`. `npm run pi`, `npm start`, and `npm test` build automatically. For continuous compilation in another terminal, use `npm run build -- --watch`. Tests exercise the compiled JavaScript that ships to users. `npm pack` builds before creating an archive.
+
+All test suites and the installed-package smoke check are written in TypeScript and checked by `npm run check` through `tsconfig.test.json`. Node 22.19+ runs them with built-in type stripping; their runtime imports still exercise `dist/` while source type imports validate the contracts.
 
 The startup resource listing is hidden; skills and extensions still load normally. UI integration relies on some Pi component structure, so engine updates are checked before activation.
 

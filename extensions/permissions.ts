@@ -4,7 +4,8 @@ import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithA
 import { PERMISSION_MODES, PERMISSION_LABELS, PERMISSION_DESCRIPTIONS, PERMISSIONS_ENTRY, PERMISSIONS_CHANGED,
   isPermissionMode, readPermissionMode, permissionDecision, permissionRequest } from "../lib/permissions.js";
 import type { PermissionMode } from "../lib/permissions.js";
-import { isWorkspaceBookkeeping } from "../lib/workspace-tools.js";
+import { isWorkspaceBookkeeping, isDelegationTool } from "../lib/workspace-tools.js";
+import { serializeApproval } from "../lib/approval-queue.js";
 import { PLAN_ENTRY, isPlanning, canPlanRead } from "../lib/plan.js";
 import type { Plan } from "../lib/plan.js";
 
@@ -12,10 +13,9 @@ export default function permissions(pi: ExtensionAPI) {
   let mode: PermissionMode = "full";
   let lifetime = new AbortController();
   let changes = new AbortController();
-  let queue = Promise.resolve();
   pi.on("session_start", (_event, ctx) => {
     mode = readPermissionMode(ctx.sessionManager.getEntries());
-    lifetime = new AbortController(); changes = new AbortController(); queue = Promise.resolve();
+    lifetime = new AbortController(); changes = new AbortController();
     pi.events.emit(PERMISSIONS_CHANGED, { mode });
   });
   pi.on("session_shutdown", () => { lifetime.abort(); changes.abort(); });
@@ -55,21 +55,23 @@ export default function permissions(pi: ExtensionAPI) {
     const signal = AbortSignal.any([lifetime.signal, changes.signal, ...(ctx.signal ? [ctx.signal] : [])]);
     const tools = pi.getAllTools();
     const marker = ctx.sessionManager.getEntries().filter((e) => e.type === "custom" && e.customType === PLAN_ENTRY).at(-1);
+    // Delegation is allowed through; the subagent enforces the same limits itself.
+    const delegating = isDelegationTool(event.toolName, tools);
     if (isPlanning((marker as { data?: Plan } | undefined)?.data) && !canPlanRead(event.toolName, tools)
-      && !isWorkspaceBookkeeping(event.toolName, event.input, tools)) {
+      && !isWorkspaceBookkeeping(event.toolName, event.input, tools) && !delegating) {
       return { block: true, terminate: true, reason: `Plan mode: ${event.toolName} is blocked until /plan execute.` };
     }
-    const decision = isWorkspaceBookkeeping(event.toolName, event.input, tools) ? "allow" : permissionDecision(mode, event.toolName, tools);
+    const decision = isWorkspaceBookkeeping(event.toolName, event.input, tools) ? "allow"
+      : delegating && mode === "read-only" ? "allow" : permissionDecision(mode, event.toolName, tools);
     if (decision === "allow" && !signal.aborted) return;
     const blocked = (reason: string) => ({ block: true, terminate: true, reason });
     if (decision === "block" || signal.aborted) return blocked(`Permissions: ${event.toolName} is blocked in ${PERMISSION_LABELS[mode]} mode.`);
-    // Parallel tool calls receive one approval dialog at a time.
-    const task = queue.then(async () => {
+    // Parallel tool calls, and subagent calls, receive one dialog at a time.
+    const granted = await serializeApproval(async () => {
       if (signal.aborted) return false;
-      try { return await approve(event.toolName, event.input, ctx, signal); } catch { return false; }
-    });
-    queue = task.then(() => {}, () => {});
-    return await task && !signal.aborted ? undefined : blocked(`Permission was not granted for ${event.toolName}.`);
+      return await approve(event.toolName, event.input, ctx, signal);
+    }, false);
+    return granted && !signal.aborted ? undefined : blocked(`Permission was not granted for ${event.toolName}.`);
   });
   pi.on("before_agent_start", (event) => {
     if (mode === "full") return;

@@ -1,0 +1,89 @@
+---
+title: Subagents
+description: Delegate self-contained work to a configured subagent that reports back.
+---
+
+# Subagents
+
+A subagent is a separate agent run with its own instructions, tool selection,
+and context. It receives one task, works on it without adding its transcript to
+your conversation, and returns a single report.
+
+Open `/agents` to browse what is configured, create an agent, or run one:
+
+```text
+/agents
+/agents run researcher find every caller of parseAgent
+/agents stop
+```
+
+The model can also delegate on its own with the `task` tool when a task is
+self-contained. Only the report enters your conversation, so a noisy search
+costs the main context one message instead of twenty.
+
+## Define an Agent
+
+Definitions are Markdown files with frontmatter, in either of two scopes:
+
+- `.pi/agents/NAME.md` in the project, shared through your repository
+- `AGENT_DIR/agents/NAME.md` in your profile, available everywhere
+
+A project definition shadows a profile definition with the same name, the way
+project settings do. Project definitions are ignored until you approve the
+project, so an untrusted repository cannot add instructions or tool selections.
+
+```markdown
+---
+name: researcher
+description: Reads code and reports findings without changing files
+tools: read, grep, find, ls
+---
+
+Investigate the question and report what you found, with file paths and line
+numbers. Do not change files.
+```
+
+`description` tells the model when to delegate, so write it for that purpose.
+`tools` is optional: omit it to inherit the engine's default selection, list
+names or `*` patterns to narrow it, or use `tools: []` for no tools at all.
+`model` is optional and keeps the current model when absent. The file body is
+the agent's instructions; it is added to Pi's own system prompt rather than
+replacing it.
+
+Agent names use lowercase letters, digits, and single hyphens. Press **n** in
+`/agents` to create one, **e** to edit, and **d** to delete. The first editor
+line selects the scope. A definition that cannot be read is listed by name so
+the remaining agents keep working.
+
+## Permissions
+
+A subagent never gets more access than you have granted in the current session.
+It runs the same checks your own tool calls do:
+
+| Mode | Subagent behavior |
+| :--- | :--- |
+| Full access | Runs with its own tool selection, without prompts |
+| Ask before actions | Each change, shell command, and external tool needs your approval |
+| Read only | Offered only the built-in read, find, grep, and ls tools |
+| Plan mode | Research only, until you run `/plan execute` |
+
+In Ask mode the approval dialog names the subagent and offers **Deny**, **Allow
+once**, and **Allow for this run**. Denial stays the default, and the run-wide
+choice is never preselected: it covers the rest of that single subagent run and
+nothing else. One dialog appears at a time, whether the request comes from your
+own tool calls or from a subagent.
+
+In Read only and Plan mode the selection is narrowed before the run starts, and
+never beyond what the definition lists: an agent that asks only for `bash` is
+offered nothing in those modes.
+
+## Limits
+
+A subagent cannot ask you questions, cannot start another subagent, and does
+not load your commands, project memory, or skills. Its run is bounded to 100
+tool calls. Its session is held in memory, so it writes no transcript to your
+profile. Interrupting the parent run cancels the subagent.
+For a manual `/agents run`, press **Esc** or **Ctrl+C**, or use `/agents stop`.
+Closing or replacing the parent session cancels its children and waits for them
+to finish before the session is replaced. Changing permissions or plan mode
+also cancels active subagents, so an earlier grant cannot outlive that policy.

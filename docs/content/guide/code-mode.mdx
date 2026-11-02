@@ -1,0 +1,44 @@
+---
+title: Code mode
+description: Run Pi's native JavaScript tool orchestration alongside ordinary tools.
+---
+
+# Code mode
+
+Code mode enables Pi's native `codemode` tool in its **on** variant. The agent
+can call ordinary tools directly or write a JavaScript script to batch calls
+and filter their results before they enter the conversation.
+
+```text
+/mode code
+/mode auto
+```
+
+While idle, **Shift+Tab** cycles **auto → plan → code → auto**. The footer shows
+`code mode` in the same blue as high effort. `/mode` reports the selected mode;
+`/mode plan` selects planning directly. Switching preserves your draft, effort,
+and permission choice. Leaving planning pauses its saved plan and never starts
+execution; `/plan execute` remains the explicit approval command.
+
+## What changes
+
+Code mode makes batching available to the model. For example, a script can await
+several independent reads with `Promise.allSettled()` and return a short summary
+with `text()`. Dependent operations and shared file mutations still need their
+proper order. Enabling code mode makes no extra model request and does not
+guarantee that a task finishes faster.
+
+Pi runs scripts in a QuickJS sandbox without Node, filesystem, or network APIs.
+Scripts reach those capabilities through the registered tools. Nested calls
+pass through the same permission and planning checks as direct calls. Read only
+blocks the outer `codemode` tool; ordinary reading tools remain available.
+
+## Session behavior
+
+The selected mode survives reload and resuming the same session. A new session
+starts in auto mode. Entering planning suspends this mode. Tool exclusions are
+respected: a session that excludes `codemode` cannot enable it here.
+
+Leaving code mode removes the tool if this mode added it. If your original
+configuration already enabled `codemode`, it stays available, and your native
+`codemode.mode` preference applies again outside code mode.

@@ -1,6 +1,7 @@
 import { getAgentDir, SettingsManager, VERSION } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { join } from "node:path";
+import { AppearanceStore, getAppearance, setAppearance } from "../lib/appearance.js";
 import { CONFIG_PREFERENCES } from "../lib/config-preferences.js";
 import type { ConfigPreferences, ConfigPreferencesUI } from "../lib/config-preferences.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -39,7 +40,23 @@ export default function configCommand(pi: ExtensionAPI) {
           const factory = (ctx.ui as ConfigPreferencesUI)[CONFIG_PREFERENCES];
           return createConfigScreen({ tui, theme, measure, done, initialTab,
             readSections: () => readSections(tui.mode),
-            createPreferences: factory ? () => (preferences = factory()) : undefined,
+            createPreferences: factory ? () => (preferences = factory({
+              items: [{ id: "legacy-logo", label: "Legacy logo", currentValue: getAppearance().legacyLogo ? "on" : "off",
+                values: ["off", "on"], description: "Replace the header mark with the classic serif π logo." }],
+              onChange: (_id, value) => {
+                const previous = getAppearance();
+                const next = { ...previous, legacyLogo: value === "on" };
+                try {
+                  new AppearanceStore(agentDir).write(next);
+                  setAppearance(next);
+                  tui.requestRender();
+                  return value;
+                } catch (error) {
+                  ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+                  return previous.legacyLogo ? "on" : "off";
+                }
+              },
+            })) : undefined,
             renderHeader: (width) => header.render(width), renderFooter: (width) => footer?.render(width),
             onDispose: () => header.dispose(),
           });

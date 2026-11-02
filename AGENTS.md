@@ -11,7 +11,7 @@ request; avoid adding features, dependencies, or refactors to unrelated areas.
 - `extensions/` registers slash commands, hooks, and tools through Pi's extension API.
 - `lib/` contains storage, provider readers, and other non-UI logic.
 - `ui/` contains terminal components and the existing Pi SVG marks.
-- `test/` tests the compiled JavaScript, including real Pi SDK integration.
+- `test/` contains TypeScript suites that test the compiled JavaScript, including real Pi SDK integration.
 - `dev/` contains opt-in diagnostics, built into `.local/dev-dist/`, never shipped.
 - `docs/` is an independent Nextra site. Its dependencies must stay out of the CLI.
 - `scripts/release-check.mjs` validates the installed npm artifact in an isolated prefix.
@@ -22,12 +22,15 @@ Use Node.js 22.19.0 or newer. Install with `npm ci`; if lifecycle scripts are
 disabled, run `npm run build` afterward. Edit TypeScript sources, never `dist/`
 or `node_modules/`. Build before restarting a linked `pi`.
 
-- `npm run check` checks strict TypeScript types.
+- `npm run check` checks strict TypeScript types in production, diagnostics, all test suites, and the installed-package smoke check.
 - `npm run build` clears `dist/`, compiles production code, and checks its extension allowlist.
 - `npm run build:dev` separately builds development diagnostics into `.local/dev-dist/`.
 - `npm test` builds both targets and runs the complete suite.
 - For a focused check after building:
-  `node scripts/run-tests.mjs test/workspace.test.mjs`.
+  `node scripts/run-tests.mjs test/workspace.test.ts`.
+- TypeScript tests run through Node's built-in type stripping on Node 22.19+.
+  Keep test syntax erasable. Import compiled runtime modules and use source type
+  imports to validate their contracts; tests must keep exercising the built code.
 - `npm run release:check` checks types, tests, packing, isolated installation,
   commands, permissions, memory, planning, compaction, and session resume.
 - For documentation, run `npm ci` and `npm run build` from `docs/`.
@@ -55,6 +58,12 @@ real user profile for routine tests; use isolated fixtures instead.
 - Preserve the distinction between permissions, project trust, and planning.
   Plan execution needs explicit user approval; nested tool calls must pass the
   same permission checks. Permission errors must not silently allow a tool.
+- A subagent runs the same permission and planning checks as the parent, through
+  its own injected guard, and is never offered a wider tool selection than both
+  the current mode and its own definition allow. It has no UI: approval requests
+  go to the parent's screen through the shared approval queue, one dialog at a
+  time. Subagents load no extensions, so they cannot nest; keep their runs
+  bounded and their sessions in memory, writing no transcript to the profile.
 - Store notebook, prompt, and plan state under the active profile, outside the
   working tree. Use atomic writes, bounded input, and validated paths. Reserve
   `memory` as a topic ID because it conflicts with `MEMORY.md` on Windows.

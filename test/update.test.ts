@@ -1,19 +1,24 @@
+import type { UpdateOptions } from "../bin/update.js";
+import type { ReleaseUpdate } from "../lib/update-notice.js";
+import { present } from "./helpers.ts";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { tmpdir } from "node:os";
-import { captureCommand, planUpdate, updateEngine, latestVersion } from "../dist/bin/update.js";
-import { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime, describeRuntime } from "../dist/bin/runtime.js";
-import { checkForEngineUpdate, checkForAgentUpdate, checkForUpdates, checkForReleaseUpdates, UPDATE_CHECK_INTERVAL } from "../dist/lib/update-notice.js";
-import { installAgent, updateAgent } from "../dist/bin/self-update.js";
-import updateNotice from "../dist/extensions/update-notice.js";
-import { availableUpdateLabel, setAvailableUpdates, visibleUpdateLabel } from "../dist/lib/update-status.js";
+const { captureCommand, planUpdate, updateEngine, latestVersion } = await import(new URL("../dist/bin/update.js", import.meta.url).href) as typeof import("../bin/update.js");
+const { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime, describeRuntime } = await import(new URL("../dist/bin/runtime.js", import.meta.url).href) as typeof import("../bin/runtime.js");
+const { checkForEngineUpdate, checkForAgentUpdate, checkForUpdates, checkForReleaseUpdates, UPDATE_CHECK_INTERVAL } = await import(new URL("../dist/lib/update-notice.js", import.meta.url).href) as typeof import("../lib/update-notice.js");
+const { installAgent, updateAgent } = await import(new URL("../dist/bin/self-update.js", import.meta.url).href) as typeof import("../bin/self-update.js");
+const { default: updateNotice } = await import(new URL("../dist/extensions/update-notice.js", import.meta.url).href) as typeof import("../extensions/update-notice.js");
+const { availableUpdateLabel, setAvailableUpdates, visibleUpdateLabel } = await import(new URL("../dist/lib/update-status.js", import.meta.url).href) as typeof import("../lib/update-status.js");
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixtureRoot = resolve(root, ".local/update-tests");
-function fixture(t) {
+function fixture(t: TestContext) {
   mkdirSync(fixtureRoot, { recursive: true });
   const directory = mkdtempSync(join(fixtureRoot, "runtime-"));
   t.after(() => {
@@ -23,7 +28,7 @@ function fixture(t) {
   });
   return directory;
 }
-function stage(directory, version) {
+function stage(directory: string, version: string) {
   const packageDir = join(directory, "releases", version, "node_modules", PI_PACKAGE);
   mkdirSync(packageDir, { recursive: true });
   writeFileSync(join(packageDir, "package.json"), JSON.stringify({ name: PI_PACKAGE, version, main: "index.js", bin: { pi: "cli.js" } }));
@@ -38,13 +43,13 @@ test("agent updates are the default, engine updates are explicit, and resource u
   }
   assert.deepEqual(planUpdate(["update", "--check"]), { type: "package", checkOnly: true });
   assert.equal(planUpdate(["update", "--engine"]).type, "engine");
-  assert.equal(planUpdate(["update", "--engine", "--check"]).checkOnly, true);
+  assert.equal((planUpdate(["update", "--engine", "--check"]) as {checkOnly:boolean}).checkOnly, true);
   assert.throws(() => planUpdate(["update", "self", "--rollback"]), /Use pi update/);
-  assert.deepEqual(planUpdate(["update", "--all"]).extensionArgs, ["update", "--extensions"]);
+  assert.deepEqual((planUpdate(["update", "--all"]) as {extensionArgs:string[]}).extensionArgs, ["update", "--extensions"]);
   for (const args of [["update", "--models"], ["update", "--extensions"], ["update", "--extension", "pi"]]) {
     assert.deepEqual(planUpdate(args), { type: "upstream", args });
   }
-  assert.equal(planUpdate(["update", "--to", "1.4.0", "--offline"]).version, "1.4.0");
+  assert.equal((planUpdate(["update", "--to", "1.4.0", "--offline"]) as {version:string}).version, "1.4.0");
   assert.throws(() => planUpdate(["update", "--to", "../../other"]), /exact Pi version/);
   assert.throws(() => planUpdate(["update", "--rollback", "--all"]), /cannot be combined/);
 });
@@ -56,9 +61,9 @@ test("agent updates install an exact release into the current global prefix", as
   mkdirSync(packageRoot, { recursive: true });
   const manifest = join(packageRoot, "package.json");
   writeFileSync(manifest, JSON.stringify({ name: "pi-extended-agent", version: "1.0.0" }));
-  const calls = [], logs = [];
-  const services = { log: (line) => logs.push(line), latest: async () => "1.0.1", globalRoot: async () => globalRoot,
-    install: async (version, prefix) => {
+  const calls: [string, string][] = [], logs: string[] = [];
+  const services = { log: (line: string) => logs.push(line), latest: async () => "1.0.1", globalRoot: async () => globalRoot,
+    install: async (version: string, prefix: string) => {
       calls.push([version, prefix]);
       writeFileSync(manifest, JSON.stringify({ name: "pi-extended-agent", version }));
     } };
@@ -91,7 +96,7 @@ test("agent installation failures do not report success", async (t) => {
   const directory = fixture(t), globalRoot = join(directory, "node_modules"), packageRoot = join(globalRoot, "pi-extended-agent");
   mkdirSync(packageRoot, { recursive: true });
   writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "pi-extended-agent", version: "1.0.0" }));
-  const logs = [], services = { log: (line) => logs.push(line), latest: async () => "1.0.1", globalRoot: async () => globalRoot };
+  const logs: string[] = [], services = { log: (line: string) => logs.push(line), latest: async () => "1.0.1", globalRoot: async () => globalRoot };
   await assert.rejects(updateAgent(packageRoot, {}, { ...services, install: async () => { throw Error("npm failed"); } }), /npm failed/);
   await assert.rejects(updateAgent(packageRoot, {}, { ...services, install: async () => {} }), /did not install/);
   assert.doesNotMatch(logs.join("\n"), /updated to/);
@@ -108,7 +113,7 @@ test("agent installation invokes npm without a shell, lifecycle scripts, or floa
   try {
     const prefix = join(directory, "prefix with spaces");
     await installAgent("1.0.1", prefix);
-    assert.deepEqual(JSON.parse(readFileSync(output)), ["install", "--global", "--prefix", prefix,
+    assert.deepEqual(JSON.parse(readFileSync(output, "utf8")), ["install", "--global", "--prefix", prefix,
       "--ignore-scripts", "--no-audit", "--no-fund", "pi-extended-agent@1.0.1"]);
     await assert.rejects(installAgent("../../bad", prefix), /Invalid target/);
   } finally {
@@ -138,7 +143,7 @@ test("verified engine activation preserves the package and launcher", async (t) 
   const directory = fixture(t);
   const manifest = readFileSync(join(root, "package.json"));
   const launcher = readFileSync(join(root, "bin/pi.mjs"));
-  const versions = [];
+  const versions: string[] = [];
   await updateEngine(root, { version: "1.5.0" }, { ...quiet, directory,
     async install(version, dir) { assert.equal(dir, directory); stage(dir, version); },
     async verify(runtime) { versions.push(runtime.version); },
@@ -188,7 +193,7 @@ test("release lookup uses npm with a retry and rejects invalid metadata", async 
     assert.ok(args.includes(`${PI_PACKAGE}@latest`));
     assert.ok(args.includes("--fetch-retries=1"));
     assert.ok(args.includes("--fetch-timeout=30000"));
-    assert.ok(options.timeout > 60_000);
+    assert.ok(present(options.timeout) > 60_000);
     return { stdout: '"1.4.0"\n' };
   });
   assert.equal(version, "1.4.0");
@@ -203,8 +208,8 @@ test("captured command output is returned, reported on failure, and leaves no te
   assert.equal((await captureCommand(process.execPath, ["-e", "process.stdout.write('\"1.4.0\"')"], {})).stdout, '"1.4.0"');
   await assert.rejects(captureCommand(process.execPath, ["-e", "process.stderr.write('npm failed here'); process.exit(3)"], {}),
     (error) => {
-      assert.match(error.message, /exited with code 3/);
-      assert.match(error.stderr, /npm failed here/);
+      assert.match((error as Error).message, /exited with code 3/);
+      assert.match((error as Error & {stderr:string}).stderr, /npm failed here/);
       return true;
     });
   assert.equal(staged(), before);
@@ -237,11 +242,11 @@ test("startup update checks cache registry results and compare with the active e
   let calls = 0;
   const options = { directory, now: 100000, offline: false, latest: async () => { calls++; return "1.5.0"; } };
   const notice = await checkForEngineUpdate("1.4.0", options);
-  assert.match(notice, /Pi 1\.5\.0.*current: 1\.4\.0.*pi update/);
+  assert.match(present(notice), /Pi 1\.5\.0.*current: 1\.4\.0.*pi update/);
   assert.equal(existsSync(join(directory, "active.json")), false);
   assert.equal(await checkForEngineUpdate("1.5.0", options), undefined);
   assert.equal(await checkForEngineUpdate("1.6.0", options), undefined);
-  assert.match(await checkForEngineUpdate("1.4.0", options), /1\.5\.0/);
+  assert.match(present(await checkForEngineUpdate("1.4.0", options)), /1\.5\.0/);
   assert.equal(calls, 1);
   await checkForEngineUpdate("1.4.0", { ...options, now: options.now + UPDATE_CHECK_INTERVAL });
   assert.equal(calls, 2);
@@ -254,12 +259,12 @@ test("agent and engine notices use separate caches and point to their own comman
   const directory = fixture(t);
   let calls = 0;
   const options = { directory, offline: false, now: 1000, latest: async () => { calls++; return "1.0.1"; } };
-  assert.match(await checkForAgentUpdate("1.0.0", options), /Pi Extended Agent 1\.0\.1.*Run pi update in/);
+  assert.match(present(await checkForAgentUpdate("1.0.0", options)), /Pi Extended Agent 1\.0\.1.*Run pi update in/);
   assert.equal(await checkForAgentUpdate("1.0.1", options), undefined);
   assert.equal(calls, 1);
-  assert.match(await checkForEngineUpdate("1.4.0", { ...options, latest: async () => "1.5.0" }), /pi update --engine/);
-  assert.equal(JSON.parse(readFileSync(join(directory, "agent-update-check.json"))).version, "1.0.1");
-  assert.equal(JSON.parse(readFileSync(join(directory, "update-check.json"))).version, "1.5.0");
+  assert.match(present(await checkForEngineUpdate("1.4.0", { ...options, latest: async () => "1.5.0" })), /pi update --engine/);
+  assert.equal(JSON.parse(readFileSync(join(directory, "agent-update-check.json"), "utf8")).version, "1.0.1");
+  assert.equal(JSON.parse(readFileSync(join(directory, "update-check.json"), "utf8")).version, "1.5.0");
   assert.equal(await checkForAgentUpdate("1.0.0", { ...options, offline: true }), undefined);
 });
 
@@ -268,8 +273,8 @@ test("combined notices check both release streams without confusing their versio
   let calls = 0;
   const notice = await checkForUpdates("1.4.0", { directory, offline: false, latest: async () => { calls++; return "1.5.0"; } });
   assert.equal(calls, 2);
-  assert.match(notice, /Pi Extended Agent 1\.5\.0.*pi update in/);
-  assert.match(notice, /Pi 1\.5\.0.*pi update --engine/);
+  assert.match(present(notice), /Pi Extended Agent 1\.5\.0.*pi update in/);
+  assert.match(present(notice), /Pi 1\.5\.0.*pi update --engine/);
   const reports = await checkForReleaseUpdates("1.4.0", { directory, offline: false, latest: async () => assert.fail("cached release checks must not fetch") });
   assert.deepEqual(reports.map(({ kind, command }) => [kind, command]), [["agent", "pi update"], ["engine", "pi update --engine"]]);
 });
@@ -305,34 +310,34 @@ test("background registry lookup has a short timeout, no retries, and supports c
 });
 
 test("update notification never blocks startup, checks once, and cancels on shutdown", async (t) => {
-  const handlers = new Map(), statuses = [];
-  let finish, calls = 0, signal;
-  const check = (_current, options) => {
-    calls++; signal = options.signal;
-    return new Promise((resolve) => { finish = resolve; });
+  const handlers = new Map(), statuses: unknown[] = [];
+  let finish!: (updates: ReleaseUpdate[]) => void, calls = 0, signal: AbortSignal | undefined;
+  const check: NonNullable<Parameters<typeof updateNotice>[1]> = (_current, options) => {
+    calls++; signal = options?.signal;
+    return new Promise<ReleaseUpdate[]>((resolve) => { finish = resolve; });
   };
-  const pi = { on(event, handler) { handlers.set(event, handler); } };
-  const ctx = { mode: "tui", ui: { setStatus: (_key, message) => statuses.push(message), notify() { assert.fail("updates belong in the persistent input status"); } } };
-  updateNotice(pi, check);
+  const pi = { on(event: string, handler: unknown) { handlers.set(event, handler); return () => {}; } };
+  const ctx = { mode: "tui", ui: { setStatus: (_key: string, message?: string) => statuses.push(message), notify() { assert.fail("updates belong in the persistent input status"); } } };
+  updateNotice((pi as unknown as Parameters<typeof updateNotice>[0]), check);
   t.after(() => handlers.get("session_shutdown")());
   handlers.get("session_start")({}, { ...ctx, mode: "rpc" });
   assert.equal(calls, 0);
   assert.equal(handlers.get("session_start")({}, ctx), undefined);
   handlers.get("session_start")({}, ctx);
   assert.equal(calls, 1);
-  finish([{ kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "An agent update is available." }]);
+  present(finish)([{ kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "An agent update is available." }]);
   await new Promise(setImmediate);
   assert.equal(statuses.at(-1), undefined);
   assert.equal(visibleUpdateLabel(), undefined);
   assert.equal(availableUpdateLabel(), "Update 1.2.0 · pi update");
   assert.equal(availableUpdateLabel(12), "↑ 1.2.0");
   handlers.get("session_shutdown")();
-  updateNotice(pi, check);
+  updateNotice((pi as unknown as Parameters<typeof updateNotice>[0]), check);
   handlers.get("session_start")({}, ctx);
   handlers.get("session_shutdown")();
-  assert.equal(signal.aborted, true);
+  assert.equal(present(signal).aborted, true);
   const count = statuses.length;
-  finish([{ kind: "agent", version: "9.0.0", current: "1.1.0", command: "pi update", message: "must not notify after shutdown" }]);
+  present(finish)([{ kind: "agent", version: "9.0.0", current: "1.1.0", command: "pi update", message: "must not notify after shutdown" }]);
   await new Promise(setImmediate);
   assert.equal(statuses.length, count);
   assert.equal(availableUpdateLabel(), undefined);
@@ -340,11 +345,11 @@ test("update notification never blocks startup, checks once, and cancels on shut
 
 test("update slot rotates while idle and stops repainting on shutdown or when no update exists", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const handlers = new Map(), statuses = [];
-  const pi = { on: (event, handler) => handlers.set(event, handler) };
-  const ctx = { mode: "tui", ui: { setStatus: (_key, text) => statuses.push(text) } };
-  const update = { kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "Update available" };
-  updateNotice(pi, async () => [update]);
+  const handlers = new Map(), statuses: unknown[] = [];
+  const pi = { on: ((event, handler) => { handlers.set(event, handler); return () => {}; }) satisfies ExtensionAPI["on"] };
+  const ctx = { mode: "tui", ui: { setStatus: (_key: string, text?: string) => statuses.push(text) } };
+  const update: ReleaseUpdate = { kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "Update available" };
+  updateNotice((pi as unknown as Parameters<typeof updateNotice>[0]), async () => [update]);
   t.after(() => handlers.get("session_shutdown")());
   handlers.get("session_start")({}, ctx);
   await Promise.resolve();
@@ -367,7 +372,7 @@ test("update slot rotates while idle and stops repainting on shutdown or when no
   assert.equal(statuses.length, stopped);
   assert.equal(availableUpdateLabel(), undefined);
 
-  updateNotice(pi, async () => []);
+  updateNotice((pi as unknown as Parameters<typeof updateNotice>[0]), async () => []);
   handlers.get("session_start")({}, ctx);
   await Promise.resolve();
   const noUpdate = statuses.length;

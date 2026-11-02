@@ -2,13 +2,27 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 
-/** Trust our storage tools by their extension origin, never just a convenient tool name. */
-export function isWorkspaceTool(name: string, tools: readonly Pick<ToolInfo, "name" | "sourceInfo">[]) {
-  if (name !== "project_memory" && name !== "update_plan") return false;
+type Tools = readonly Pick<ToolInfo, "name" | "sourceInfo">[];
+
+/** Trust our own tools by their extension origin, never just a convenient tool name. */
+function fromExtension(name: string, tools: Tools, extension: string) {
   const source = tools.find((tool) => tool.name === name)?.sourceInfo?.path;
   if (!source) return false;
-  return ["workspace.js", "workspace.ts"].some((file) => resolve(source) === resolve(fileURLToPath(new URL(`../extensions/${file}`, import.meta.url))));
+  return [`${extension}.js`, `${extension}.ts`].some((file) =>
+    resolve(source) === resolve(fileURLToPath(new URL(`../extensions/${file}`, import.meta.url))));
 }
-export function isWorkspaceBookkeeping(name: string, input: unknown, tools: readonly Pick<ToolInfo, "name" | "sourceInfo">[]) {
+export function isWorkspaceTool(name: string, tools: Tools) {
+  if (name !== "project_memory" && name !== "update_plan") return false;
+  return fromExtension(name, tools, "workspace");
+}
+export function isWorkspaceBookkeeping(name: string, input: unknown, tools: Tools) {
   return isWorkspaceTool(name, tools) && (name === "update_plan" || ["list", "read"].includes(String((input as { action?: unknown })?.action)));
+}
+/**
+ * Delegation passes the parent's plan and read-only barriers because the subagent
+ * carries them itself: its own guard clamps it to read and search tools, and any
+ * call beyond that is blocked inside the subagent rather than at this boundary.
+ */
+export function isDelegationTool(name: string, tools: Tools) {
+  return name === "task" && fromExtension(name, tools, "agents");
 }
