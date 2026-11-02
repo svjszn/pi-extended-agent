@@ -35,8 +35,9 @@ blocks the outer `codemode` tool; ordinary reading tools remain available.
 
 ## Session behavior
 
-The selected mode survives reload and resuming the same session. A new session
-starts in auto mode. Entering planning suspends this mode. Tool exclusions are
+The selected mode survives reload, resuming the same session, and starting a new
+conversation with `/new` or `/clear`. Those commands also keep the current model
+and reasoning effort. Entering planning suspends this mode. Tool exclusions are
 respected: a session that excludes `codemode` cannot enable it here.
 
 Leaving code mode removes the tool if this mode added it. If your original

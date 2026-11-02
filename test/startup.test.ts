@@ -1,4 +1,4 @@
-import { tuiFixture } from "./helpers.ts";
+import { assistantFixture, tuiFixture } from "./helpers.ts";
 import { present } from "./helpers.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -6,10 +6,70 @@ const { bundledRuntime } = await import(new URL("../dist/bin/runtime.js", import
 const { verifyRuntime } = await import(new URL("../dist/bin/verify-runtime.js", import.meta.url).href) as typeof import("../bin/verify-runtime.js");
 import { fileURLToPath, pathToFileURL } from "node:url";
 const { hasModel, startupAuthNotice } = await import(new URL("../dist/lib/startup.js", import.meta.url).href) as typeof import("../lib/startup.js");
+const { normalizeResumeArgs } = await import(new URL("../dist/bin/resume-args.js", import.meta.url).href) as typeof import("../bin/resume-args.js");
 import { captureCommand } from "../scripts/capture-command.mjs";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
+
+test("resume aliases accept an ID while preserving picker flags, option values, and prompts after --", async () => {
+  const api = await import(pathToFileURL(join(bundledRuntime().packageDir, "dist/bundle/index.js")).href) as typeof import("@earendil-works/pi-coding-agent");
+  const id = "01a19ad3-4da7-77e7-8133-e1e207f81fd7";
+  for (const alias of ["-r", "--resume"]) {
+    assert.deepEqual(normalizeResumeArgs([alias, id], api.parseArgs), ["--session", id]);
+    assert.deepEqual(normalizeResumeArgs(["--model", "chosen", alias, id, "Follow-up"], api.parseArgs), ["--model", "chosen", "--session", id, "Follow-up"]);
+    assert.deepEqual(normalizeResumeArgs([alias, "custom.id_1"], api.parseArgs), ["--session", "custom.id_1"]);
+    for (const args of [[alias], [alias, "--model", "chosen"], [alias, "--", "Follow-up"], [alias, "@notes.md"],
+      ["--system-prompt", alias, id], ["--append-system-prompt", alias, id], ["--session", alias, id], ["--", alias, id], ["config", alias, id]]) {
+      assert.deepEqual(normalizeResumeArgs(args, api.parseArgs), args);
+    }
+  }
+  assert.deepEqual(normalizeResumeArgs(["-r", "--resume", id], api.parseArgs), ["-r", "--session", id]);
+});
+
+test("the real CLI resumes an exact chat through either alias without opening a picker or calling a model", async (t) => {
+  const root = fileURLToPath(new URL("../", import.meta.url)), base = join(root, ".local/startup-tests");
+  mkdirSync(base, { recursive: true });
+  const directory = mkdtempSync(join(base, "direct-resume-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const api = await import(pathToFileURL(join(bundledRuntime().packageDir, "dist/bundle/index.js")).href) as typeof import("@earendil-works/pi-coding-agent");
+  const sessionDir = join(directory, "sessions"), manager = api.SessionManager.create(directory, sessionDir);
+  manager.appendMessage({ role: "user", content: "Saved question", timestamp: Date.now() });
+  manager.appendMessage(assistantFixture([{ type: "text", text: "Saved answer" }], { provider: "resume-fixture", model: "fixture" }));
+  manager.appendModelChange("resume-fixture", "fixture");
+  const extension = join(directory, "fixture.mjs");
+  writeFileSync(extension, `export default function(pi) {
+    pi.registerProvider("resume-fixture", { api: "openai-responses", apiKey: "fixture-only", baseUrl: "https://fixture.invalid",
+      models: [{ id: "fixture", name: "Fixture", reasoning: false, input: ["text"], contextWindow: 100000, maxTokens: 1024,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+      streamSimple() { throw new Error("Resume must not call a model"); }
+    });
+    pi.registerCommand("resume_fixture", { description: "Fixture only", handler: async (_args, ctx) => {
+      console.error("RESUME_FIXTURE:" + JSON.stringify({ id: ctx.sessionManager.getSessionId(), history: ctx.sessionManager.buildSessionContext().messages }));
+    } });
+  }`);
+  const flags = ["--print", "--no-extensions", "--extension", extension, "--session-dir", sessionDir,
+    "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-mcp", "--offline"];
+  for (const alias of ["-r", "--resume"]) {
+    const result = captureCommand(process.execPath, [join(root, "bin/pi.mjs"), ...flags, alias, manager.getSessionId(), "/resume_fixture"], {
+      cwd: directory, encoding: "utf8", timeout: 30000, env: { ...process.env, PI_CODING_AGENT_DIR: join(directory, "profile"),
+        PI_EXTENDED_RUNTIME_DIR: join(directory, "runtime"), PI_OFFLINE: "1" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const output = result.stdout + result.stderr;
+    const match = /RESUME_FIXTURE:(\{[^\r\n]+\})/.exec(output); assert.ok(match, output);
+    const restored = JSON.parse(match[1]);
+    assert.equal(restored.id, manager.getSessionId());
+    assert.match(JSON.stringify(restored.history), /Saved question/); assert.match(JSON.stringify(restored.history), /Saved answer/);
+    assert.doesNotMatch(output, /Resume chat|Resume must not call a model/);
+  }
+  const missing = captureCommand(process.execPath, [join(root, "bin/pi.mjs"), ...flags, "--resume", "missing-session", "/resume_fixture"], {
+    cwd: directory, encoding: "utf8", timeout: 30000, env: { ...process.env, PI_CODING_AGENT_DIR: join(directory, "profile"),
+      PI_EXTENDED_RUNTIME_DIR: join(directory, "runtime"), PI_OFFLINE: "1" },
+  });
+  assert.equal(missing.status, 1); assert.match(missing.stderr, /No session found matching 'missing-session'/);
+  assert.doesNotMatch(missing.stdout + missing.stderr, /RESUME_FIXTURE:/);
+});
 
 test("launcher delegates model selection to the active engine and forwards explicit choices", (t) => {
   const root = fileURLToPath(new URL("../", import.meta.url));
@@ -28,17 +88,28 @@ test("launcher delegates model selection to the active engine and forwards expli
     name: "@earendil-works/pi-coding-agent", version: "1.4.0", type: "module", main: "cli.js", bin: { pi: "cli.js" },
   }));
   writeFileSync(join(packageDir, "cli.js"), "console.log(JSON.stringify(process.argv.slice(2)));");
+  const setupDir = join(packageDir, "dist/cli");
+  mkdirSync(setupDir, { recursive: true });
+  writeFileSync(join(setupDir, "setup.js"), "export function setupCli() {}");
   const bundleDir = join(packageDir, "dist/bundle");
   mkdirSync(bundleDir, { recursive: true });
   writeFileSync(join(bundleDir, "index.js"), `
-    export class InteractiveMode { createBaseAutocompleteProvider() {} setupEditorSubmitHandler() {} showSettingsSelector() {} createExtensionUIContext() {} showWarning() {} showModelSelector() {} disposeActiveSelector() {} showSelector() {} showLoginDialog() {} showApiKeyLoginDialog() {} showAmbientAuthDialog() {} resetExtensionUI() {} setExtensionHeader() {} setExtensionFooter() {} setCustomEditorComponent() {} }
+    export { parseArgs } from ${JSON.stringify(pathToFileURL(join(bundledRuntime().packageDir, "dist/bundle/index.js")).href)};
+    export async function main(args, options) {
+      const builtin = options.extensionFactories[0];
+      if (builtin.name !== "codemode" || !builtin.builtin) throw new Error("Missing codemode built-in");
+      console.log(JSON.stringify(args));
+    }
+    export function createCodemodeExtension() { return () => {}; }
+    export class SessionSelectorComponent { getSessionList() {} cancelLoads() {} }
+    export class InteractiveMode { async shutdown() {} createBaseAutocompleteProvider() {} setupEditorSubmitHandler() {} showSettingsSelector() {} createExtensionUIContext() {} showWarning() {} showModelSelector() {} showSessionSelector() {} disposeActiveSelector() {} showSelector() {} showLoginDialog() {} showApiKeyLoginDialog() {} showAmbientAuthDialog() {} resetExtensionUI() {} setExtensionHeader() {} setExtensionFooter() {} setCustomEditorComponent() {} }
     export class ExtensionRunner { getRegisteredCommands() {} getCommand() {} }
     export class AgentSession { async prompt() {} }
   `);
   for (const args of [[], ["Fix the login"], ["--", "--model"],
     ["--model", "openai-codex/gpt-6.1-sol"], ["--model", "custom-id"],
     ["--provider", "anthropic"], ["--models", "openai-codex/*"],
-    ["--continue"], ["-c"], ["--resume"], ["--session", "session.jsonl"], ["--fork", "session.jsonl"],
+    ["--continue"], ["-c"], ["--resume"], ["-r"], ["--session", "session.jsonl"], ["--fork", "session.jsonl"],
   ]) {
     const result = captureCommand(process.execPath, [join(root, "bin/pi.mjs"), ...args], {
       cwd: root, encoding: "utf8", timeout: 10_000, env: { ...process.env, PI_EXTENDED_RUNTIME_DIR: directory },
@@ -96,6 +167,7 @@ test("the actual launcher loads compiled extensions without importing a second S
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage|Options|coding agent/i);
   assert.doesNotMatch(result.stderr, /Failed to load extension/);
+  assert.doesNotMatch(result.stderr, /registers tool `codemode`|built-in extension `codemode` was not loaded/);
   assert.equal(existsSync(duplicate), false, "Launcher bypassed the selected bundle binding");
 });
 

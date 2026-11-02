@@ -63,12 +63,12 @@ export function createHeader(tui: HeaderTui, { truncateToWidth }: HeaderMeasure,
       hiddenResources = undefined;
     },
     render(width: number): string[] {
-      // Official pi.dev mark, normalized to its 4×4 square grid.
-      // Two terminal columns per pixel preserve square proportions.
-      // The original SVG geometry is kept alongside this file in pi-logo.svg.
+      // The modern mark keeps its 4×4 square grid (two columns per pixel).
+      // The legacy slab-serif π is wider: 8 columns by 3 rows gives a 4:3
+      // silhouette in a terminal. Half/quarter blocks keep its serifs thin
+      // and the two feet separated without shifting the header's text inset.
       const logo = getAppearance().legacyLogo
-        // Serif roof and feet, as in the legacy mark; retain the 8×4 inset.
-        ? ["████████", " ██  ██ ", " ██  ██ ", "███  ███"]
+        ? ["▀██▀▀██▀", " ██  ██ ", "▄██▖▗██▄"]
         : ["██████  ", "██  ██  ", "████  ██", "██    ██"];
       const model = info.getModel();
       // Without a model there is no name or effort to report: Pi's placeholder

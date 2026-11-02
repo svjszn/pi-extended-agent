@@ -11,16 +11,22 @@ const { bundledRuntime } = await import(pathToFileURL(join(installed, "dist/bin/
 const runtime = bundledRuntime();
 const api = await import(pathToFileURL(runtime.entry).href) as typeof import("@earendil-works/pi-coding-agent");
 const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = api;
+const { codeModeBuiltin } = await import(pathToFileURL(join(installed, "dist/lib/code-mode.js")).href) as typeof import("../lib/code-mode.js");
+const { AgentStore } = await import(pathToFileURL(join(installed, "dist/lib/agents.js")).href) as typeof import("../lib/agents.js");
 const { verifyRuntime } = await import(pathToFileURL(join(installed, "dist/bin/verify-runtime.js")).href) as typeof import("../bin/verify-runtime.js");
 await verifyRuntime(bundledRuntime(), installed);
 
 const cwd = join(temp, "project"), agentDir = present(process.env.PI_CODING_AGENT_DIR);
 mkdirSync(agentDir, { recursive: true });
+const agentStore = new AgentStore({ cwd, agentDir, projectTrusted: false });
+agentStore.save("global", { name: "release-agent", description: "Isolated release fixture", tools: [], prompt: "Return a single report." });
+assert.deepEqual(agentStore.find("release-agent")?.tools, []);
 const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false,
   credentials: { async read() {}, async list() { return []; }, async modify() {}, async delete() {} } });
 const settingsManager = SettingsManager.inMemory();
 const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true, noSkills: true,
-  noPromptTemplates: true, noThemes: true, noContextFiles: true, additionalExtensionPaths: [installed] });
+  noPromptTemplates: true, noThemes: true, noContextFiles: true, additionalExtensionPaths: [installed, "builtin:codemode"],
+  extensionFactories: [codeModeBuiltin(api.createCodemodeExtension)] });
 await loader.reload();
 assert.deepEqual(loader.getExtensions().errors, []);
 const manager = SessionManager.create(cwd, join(temp, "sessions"));
@@ -30,11 +36,13 @@ const { session } = await createAgentSession({ cwd, agentDir, modelRuntime, sett
 let resumed;
 try {
   await session.bindExtensions({ mode: "print" });
-  const required = ["config", "model", "effort", "permissions", "memory", "plan", "mode", "prompt", "theme", "color"];
+  const required = ["agents", "config", "model", "effort", "permissions", "memory", "plan", "mode", "prompt", "theme", "color"];
   const commands = session.extensionRunner.getRegisteredCommands().map((command) => command.name);
   for (const name of required.filter((name) => name !== "model")) assert.ok(commands.includes(name), `Missing /${name}`);
   assert.equal(commands.includes("perf"), false, "Installed package registered a development command");
   assert.equal(session.extensionRunner.getCommand("perf"), undefined);
+  assert.ok(loader.getExtensions().extensions.some(extension => extension.tools.has("task")));
+  await session.prompt("/agents list");
   // Exercise the production CLI loader as well as the unbundled SDK path.
   const bundled = await import(pathToFileURL(join(runtime.packageDir, "dist/bundle/index.js")).href) as typeof import("@earendil-works/pi-coding-agent");
   const cliLoader = new bundled.DefaultResourceLoader({ cwd, agentDir, settingsManager: bundled.SettingsManager.inMemory(),
@@ -43,11 +51,15 @@ try {
   assert.deepEqual(cliLoader.getExtensions().errors, []);
   for (const extension of cliLoader.getExtensions().extensions) assert.equal(extension.commands.has("perf"), false);
   assert.equal(cliLoader.getExtensions().extensions.length, JSON.parse(readFileSync(join(installed, "package.json"), "utf8")).pi.extensions.length);
+  assert.ok(cliLoader.getExtensions().extensions.some(extension => extension.commands.has("agents") && extension.tools.has("task")));
   session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "release-smoke", name: "codemode", arguments: {} }],
     api: "test", provider: "test", model: "test", stopReason: "toolUse", timestamp: Date.now(),
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0} } });
   const tools = session.extensionRunner.createToolContext("release-smoke", undefined);
   const call = (name: string, args: unknown) => tools.executeTool(name, args);
+  const missingAgent = await call("task", { agent: "missing-release-agent", task: "Do not contact a provider." });
+  assert.equal(missingAgent.isError, true);
+  assert.match(JSON.stringify(missingAgent), /Unknown subagent/);
   const note = { action: "save", id: "release-test", title: "Release check", summary: "Isolated installation works", content: "A fixture note created by the package smoke check." };
   assert.equal((await call("project_memory", note)).isError, false);
   assert.match(JSON.stringify(await call("project_memory", { action: "read", id: note.id })), /fixture note/);
@@ -71,6 +83,7 @@ try {
   assert.match(prompt.systemPromptOptions.sections.pi_extended_memory, /release-test/);
   assert.match(prompt.systemPromptOptions.sections.pi_extended_plan, /Check release/);
   assert.match(prompt.systemPromptOptions.sections.pi_extended_prompt, /Keep answers short/);
+  assert.match(prompt.systemPromptOptions.sections.pi_extended_agents, /release-agent: Isolated release fixture/);
   assert.equal(settingsManager.getCompactionSettings().enabled, true);
   const sessionFile = present(manager.getSessionFile()); assert.ok(existsSync(sessionFile));
   session.dispose();
@@ -83,9 +96,12 @@ try {
   assert.match(restored.systemPromptOptions.sections.pi_extended_plan, /Check release/);
   assert.match(restored.systemPromptOptions.sections.pi_extended_prompt, /Keep answers short/);
   assert.match(restored.systemPromptOptions.sections.pi_extended_memory, /release-test/);
+  assert.match(restored.systemPromptOptions.sections.pi_extended_agents, /release-agent: Isolated release fixture/);
+  await resumed.prompt("/agents delete release-agent");
+  assert.equal(agentStore.find("release-agent"), undefined);
   await resumed.prompt("/plan cancel");
   await resumed.prompt("/permissions read-only");
   assert.ok(reopened.getEntries().some((entry) => entry.type === "custom" && entry.customType === "pi-extended-permissions" && (entry.data as {mode?:string}).mode === "read-only"));
   assert.equal(readFileSync(join(cwd, "sample.txt"), "utf8"), "original");
-  console.log("Installed package: commands, code mode, memory, plan barrier, compaction and disk resume passed.");
+  console.log("Installed package: commands, agents, code mode, memory, plan barrier, compaction and disk resume passed.");
 } finally { session.dispose(); resumed?.dispose(); }

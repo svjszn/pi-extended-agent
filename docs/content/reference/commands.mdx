@@ -25,7 +25,8 @@ description: Slash commands and terminal commands available in Pi Extended Agent
 | `/model [query]` | Search models, select one, or save a default |
 | `/skills [query]` | Enable/disable installed skills with Space, search, preview, and install; close to apply changes |
 | `/agents [run NAME TASK\|stop]` | Browse, create, edit, run, and stop subagents |
-| `/clear` | Clear the conversation and start a new session (`/new` does the same) |
+| `/clear` | Start a fresh conversation, keeping the model, effort, and work mode (`/new` does the same) |
+| `/resume` | Search saved chats and continue a selected conversation |
 
 Native Pi commands such as `/login`, `/logout`, `/new`, `/resume`, `/compact`,
 `/reload`, and `/quit` remain available.
@@ -57,6 +58,8 @@ information. MCP management remains available through Pi's terminal CLI.
 ```sh
 pi
 pi --continue
+pi -r
+pi --resume
 pi --model PROVIDER/MODEL_ID
 pi --tui-mode regular
 pi --help

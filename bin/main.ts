@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { planUpdate, updateEngine, updateHelp } from "./update.js";
 import { selectedRuntime } from "./runtime.js";
 import { errorMessage } from "../lib/errors.js";
@@ -53,4 +53,5 @@ const { prepareRuntimeCommands } = await import("./command-policy.js");
 await prepareRuntimeCommands(runtime);
 const { bindCompiledExtensionImports } = await import("./extension-runtime.js");
 bindCompiledExtensionImports(runtime);
-await import(pathToFileURL(runtime.cli).href);
+const { runtimeCli } = await import("./runtime-cli.js");
+await (await runtimeCli(runtime)).run(process.argv.slice(2));

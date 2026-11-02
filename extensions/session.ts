@@ -1,5 +1,7 @@
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../lib/errors.js";
+import { SESSION_PREFERENCES_ENTRY, sessionPreferences, preferenceHandoffKey, handoffPreferences, takePreferences } from "../lib/session-preferences.js";
 
 const DESCRIPTION = "Clear the conversation and start a new session";
 
@@ -16,13 +18,30 @@ function report(ctx: Pick<ExtensionCommandContext, "hasUI" | "ui">, text: string
  * everything after it runs on the context `withSession` provides.
  */
 export default function session(pi: ExtensionAPI) {
+  pi.on("session_start", async (event, ctx) => {
+    if (event.reason !== "new") return;
+    const preferences = takePreferences(preferenceHandoffKey(getAgentDir(), ctx.cwd, event.previousSessionFile));
+    if (!preferences) return;
+    try {
+      // Workspace initializes from this marker before it admits any tool calls.
+      pi.appendEntry(SESSION_PREFERENCES_ENTRY, preferences);
+      const selected = preferences.model;
+      if (selected && (ctx.model?.provider !== selected.provider || ctx.model?.id !== selected.id)) {
+        const model = ctx.modelRegistry.find(selected.provider, selected.id);
+        if (!model || !await pi.setModel(model)) throw new Error(`The previous model ${selected.provider}/${selected.id} is unavailable.`);
+      }
+      pi.setThinkingLevel(preferences.effort);
+    } catch (error) { report(ctx, `Could not restore session settings: ${errorMessage(error)}`, true); }
+  });
   const handler = async (_args: string, ctx: ExtensionCommandContext) => {
     if (!ctx.isIdle()) {
       report(ctx, "Wait for the current run to finish before clearing the conversation.", true);
       return;
     }
     let replaced = false;
+    let release: (() => void) | undefined;
     try {
+      release = handoffPreferences(preferenceHandoffKey(getAgentDir(), ctx.cwd, ctx.sessionManager.getSessionFile()), sessionPreferences(ctx, pi));
       const result = await ctx.newSession({
         withSession: async (fresh: Pick<ExtensionCommandContext, "hasUI" | "ui">) => {
           replaced = true;
@@ -34,7 +53,7 @@ export default function session(pi: ExtensionAPI) {
     } catch (error) {
       if (replaced) console.error(errorMessage(error));
       else report(ctx, errorMessage(error), true);
-    }
+    } finally { release?.(); }
   };
   pi.registerCommand("clear", { description: DESCRIPTION, handler });
 }

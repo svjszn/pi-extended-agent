@@ -10,6 +10,8 @@ import type { SettingItem, SettingsListTheme } from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
 import { keepSessionChrome } from "./chrome-interface.js";
 import { installModelInterface } from "./model-interface.js";
+import { installSessionInterface } from "./session-interface.js";
+import type { SessionInterfaceApi } from "./session-interface.js";
 import { installAuthInterface } from "./auth-interface.js";
 import type { AuthInterfaceApi } from "./auth-interface.js";
 import type { ModelInterfaceApi } from "./model-interface.js";
@@ -224,6 +226,7 @@ export async function prepareRuntimeCommands(runtime: Runtime) {
   const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href) as Measure;
   installModelInterface(api as unknown as ModelInterfaceApi, measure, runtime.version);
   installAuthInterface(api as unknown as AuthInterfaceApi, measure, runtime.version);
+  installSessionInterface(api as unknown as SessionInterfaceApi, measure, runtime.version);
   return api;
 }
 

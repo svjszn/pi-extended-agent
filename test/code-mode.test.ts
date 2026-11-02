@@ -4,12 +4,12 @@ import type { TestContext } from "node:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, createCodemodeExtension, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AgentSession, AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { Context, ToolCall } from "@earendil-works/pi-ai";
 import { assistantFixture, present } from "./helpers.ts";
 
-const { CODE_MODE_ENTRY, readCodeMode } = await import(new URL("../dist/lib/code-mode.js", import.meta.url).href) as typeof import("../lib/code-mode.js");
+const { CODE_MODE_ENTRY, readCodeMode, codeModeBuiltin } = await import(new URL("../dist/lib/code-mode.js", import.meta.url).href) as typeof import("../lib/code-mode.js");
 const { PLAN_ENTRY, PLAN_TOGGLE } = await import(new URL("../dist/lib/plan.js", import.meta.url).href) as typeof import("../lib/plan.js");
 const { readPermissionMode } = await import(new URL("../dist/lib/permissions.js", import.meta.url).href) as typeof import("../lib/permissions.js");
 const { createFooter } = await import(new URL("../dist/ui/chrome.js", import.meta.url).href) as typeof import("../ui/chrome.js");
@@ -19,7 +19,7 @@ import { createRequire, findPackageJSON } from "node:module";
 const require = createRequire(import.meta.resolve("@earendil-works/pi-coding-agent"));
 const measure = await import(pathToFileURL(require.resolve("@earendil-works/pi-tui")).href) as typeof import("@earendil-works/pi-tui");
 
-async function fixture(t: TestContext, excludeTools?: string[], initiallyActive = false) {
+async function fixture(t: TestContext, excludeTools?: string[], initiallyActive = false, builtinEnabled = true) {
   const base = resolve(".local/code-mode-tests"); mkdirSync(base, { recursive: true });
   const cwd = mkdtempSync(join(base, "case-")), agentDir = join(cwd, "profile");
   const previous = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -58,15 +58,16 @@ async function fixture(t: TestContext, excludeTools?: string[], initiallyActive 
   // The wrapper's code mode must keep direct declarations even if preferences
   // request the engine's only variant.
   const settings = SettingsManager.inMemory({ codemode: { mode: "only" },
+    extensions: builtinEnabled ? [] : ["-builtin:codemode"],
     ...(initiallyActive ? { defaultTools: ["+codemode"] } : {}),
   });
   let current!: AgentSession;
   let toggle!: () => void;
   const create = async (manager = SessionManager.inMemory(cwd)) => {
     const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: settings,
-      noExtensions: true, noSkills: true, noContextFiles: true, noPromptTemplates: true, noThemes: true,
+      noSkills: true, noContextFiles: true, noPromptTemplates: true, noThemes: true,
       additionalExtensionPaths: [fileURLToPath(new URL("../dist/extensions/workspace.js", import.meta.url)), fileURLToPath(new URL("../dist/extensions/permissions.js", import.meta.url))],
-      extensionFactories: [(pi) => {
+      extensionFactories: [codeModeBuiltin(createCodemodeExtension), (pi) => {
         toggle = () => pi.events.emit(PLAN_TOGGLE, undefined);
         pi.registerTool({ name: "revoke_access", label: "Revoke access", description: "Fixture only", parameters: { type: "object", properties: {} },
           async execute() { await current.prompt("/permissions read-only"); return { content: [{ type: "text", text: "Permissions changed" }], details: {} }; },
@@ -74,6 +75,9 @@ async function fixture(t: TestContext, excludeTools?: string[], initiallyActive 
       }],
     });
     await loader.reload(); assert.deepEqual(loader.getExtensions().errors, []);
+    assert.deepEqual(loader.getExtensions().warnings ?? [], []);
+    assert.deepEqual(loader.getExtensions().extensions.filter((extension) => extension.tools.has("codemode"))
+      .map((extension) => extension.path), builtinEnabled ? ["builtin:codemode"] : []);
     const { session } = await createAgentSession({ cwd, agentDir, settingsManager: settings, modelRuntime: runtime,
       resourceLoader: loader, sessionManager: manager, excludeTools, model: runtime.getModel("code-fixture", "fixture"),
     });
@@ -115,6 +119,17 @@ test("code mode enables the engine's on variant, retains direct tools, and runs 
   assert.equal(noNode.isError, false); assert.doesNotMatch(JSON.stringify(noNode.result.content), /function/);
   await f.session.prompt("/mode auto");
   assert.equal(f.mode().enabled, false); assert.deepEqual(f.session.getActiveToolNames(), before);
+});
+
+test("disabling the built-in prevents workspace from registering a replacement codemode", async (t) => {
+  const f = await fixture(t, undefined, false, false);
+  assert.equal(f.session.getAllTools().some((tool) => tool.name === "codemode"), false);
+  const before = f.session.getActiveToolNames();
+  await f.session.prompt("/mode code");
+  assert.equal(f.mode().enabled, false);
+  assert.deepEqual(f.session.getActiveToolNames(), before);
+  f.toggle(); f.toggle();
+  assert.equal(f.mode().enabled, false, "the mode shortcut skips unavailable codemode");
 });
 
 test("Shift+Tab cycles auto, plan, code, auto while preserving the draft and requiring explicit execution", async (t) => {

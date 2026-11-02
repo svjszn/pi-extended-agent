@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.3.0
+
+- Check `/agents` and the `task` tool in the installed npm artifact, including agent definition persistence, unknown-agent errors, command screens on cold load and reload, and disk session resume. Cover editor save/cancel behavior and narrow layouts without widening an explicit empty tool selection.
+
+- Refine the legacy π header logo with wider 4:3 proportions, thinner slab serifs, and separated feet while preserving its accent color and shared text inset.
+
+- Support `pi --resume SESSION_ID` and `pi -r SESSION_ID` for direct resume, and include the current chat ID in the exit hint. Keep the search picker when no ID is supplied, preserve custom session directories, and use Pi's native session resolver.
+
+- Show `pi -r`, `pi --resume`, and `/resume` in the shared borderless resume screen, with recent chats, dates, message counts, native conversation search, and current/all-project scopes. Keep Pi's session loading and resume callbacks.
+
+- Keep the current model, reasoning effort, and auto/code/plan work mode across `/new` and `/clear`. Start an inherited plan mode with an empty plan, preserving the old plan in its original session and requiring fresh execution approval.
+
+- Register code mode through Pi's configured built-in extension slot instead of the workspace extension, avoiding the duplicate `codemode` startup warning and respecting built-in extension enable/disable settings.
+
 - Migrate every test suite and the installed-package smoke check to TypeScript, preserve compiled-runtime coverage, and validate all test types with the strict test configuration.
 - Add code mode with Pi's native QuickJS orchestration in its on variant alongside ordinary tools. Shift+Tab cycles auto, plan, and code; `/mode` selects a mode directly. Show code mode in the footer using high-effort blue. Preserve permissions, paused plans, tool exclusions, and session state across reload/resume.
 

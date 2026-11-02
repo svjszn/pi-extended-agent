@@ -16,6 +16,31 @@ Windows, background update checks use a separate hidden console and Pi suppresse
 the terminal/taskbar progress indicator. This does not change Windows Terminal
 settings or the in-app Working indicator.
 
+## Resume a Chat
+
+Run either command from your terminal:
+
+```sh
+pi -r
+pi --resume
+```
+
+The resume screen lists recent chats with their names, dates, and message counts.
+Type to search names or conversation text. Use Up/Down to select a chat and Enter
+to continue it. Tab switches between the current project and all projects in the
+active profile. Escape cancels. `/resume` opens the same screen inside Pi.
+
+To reopen a specific chat without the picker, use `pi --resume SESSION_ID` or
+`pi -r SESSION_ID`. The exit hint includes the current chat's ID. Without an ID,
+both commands open the search screen. Use `--` before a follow-up prompt when
+opening the picker, for example `pi -r -- "Continue the previous task"`.
+
+For a phrase, search with quotes, such as `"login issue"`. `pi -c` or
+`pi --continue` continues the most recent chat in the current project directly.
+
+Resuming uses Pi's saved session, including its conversation history, model,
+reasoning effort, permissions, and work mode.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |

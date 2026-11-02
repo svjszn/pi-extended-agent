@@ -22,6 +22,9 @@ import { installCommandPolicy, prepareRuntimeCommands, verifyCommandPolicy } fro
 import { keepSessionChrome, verifySessionChrome } from "./chrome-interface.js";
 import type { ChromeRuntimeApi } from "./chrome-interface.js";
 import type { CommandRuntimeApi } from "./command-policy.js";
+import { runtimeCli } from "./runtime-cli.js";
+import { createSessionScreen } from "../ui/session-screen.js";
+import type { NativeSessionSelector } from "../ui/session-screen.js";
 
 type PiApi = typeof import("@earendil-works/pi-coding-agent");
 type TuiApi = typeof import("@earendil-works/pi-tui");
@@ -34,6 +37,8 @@ interface PrivateViewportApi {
 
 // No provider calls or user profile writes: probe our UI against the candidate.
 export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
+  // Resolve the selected engine's CLI setup and public entry point without starting it.
+  await runtimeCli(runtime);
   const entry = pathToFileURL(runtime.entry);
   const require = createRequire(entry);
   const api = await import(entry.href) as PiApi;
@@ -64,6 +69,22 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   const { renderLayoutFrame } = await import(new URL("./layout.js", tuiEntry).href) as PrivateLayoutApi;
   const { createChatViewport } = await import(new URL("./modes/interactive/chat-viewport.js", entry).href) as PrivateViewportApi;
   const { KeybindingsManager } = await import(new URL("./core/keybindings.js", entry).href) as { KeybindingsManager: new () => Keys };
+  const SessionSelector = (commandApi as unknown as PiApi).SessionSelectorComponent;
+  assert.equal(typeof SessionSelector, "function", "Missing native session selector");
+  const fixtureChat = { id: "compat-chat", path: "compat-chat.jsonl", cwd: packageRoot, name: "Compatibility chat",
+    firstMessage: "Inspect the module", allMessagesText: "Inspect the module\nneedle", messageCount: 2, created: new Date(), modified: new Date() };
+  const sessionSelector = new SessionSelector(async () => [fixtureChat], async () => [fixtureChat], () => {}, () => {}, () => {}, () => {},
+    { keybindings: new KeybindingsManager() });
+  const sessionPanel = createSessionScreen({ selector: sessionSelector as unknown as NativeSessionSelector,
+    tui: { terminal: { rows: 24 }, requestRender() {} }, theme: createUiTheme(), measure: tuiApi, done() {} });
+  try {
+    await sessionPanel.ready;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.ok(sessionPanel.render(80).some((line) => line.includes("Compatibility chat")), "Runtime breaks resume listings");
+    sessionPanel.handleInput("needle");
+    assert.ok(sessionPanel.render(80).some((line) => line.includes("Compatibility chat")), "Runtime breaks conversation search");
+    sessionPanel.handleInput("\x1b");
+  } finally { sessionPanel.dispose(); }
   const { UserMessageComponent } = await import(new URL("./modes/interactive/components/user-message.js", entry).href) as { UserMessageComponent: new (text: string) => Component };
   const { AssistantMessageComponent } = await import(new URL("./modes/interactive/components/assistant-message.js", entry).href) as { AssistantMessageComponent: new (message: { content: { type: "text"; text: string }[] }) => Component };
   const { initTheme, getEditorTheme } = await import(new URL("./modes/interactive/theme/theme.js", entry).href) as {

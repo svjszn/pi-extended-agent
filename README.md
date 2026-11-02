@@ -27,7 +27,7 @@
 
 | Component | Version / default |
 | :--- | :--- |
-| Package | `pi-extended-agent` · `1.2.0` |
+| Package | `pi-extended-agent` · `1.3.0` |
 | Bundled Pi fallback | `1.4.0` |
 | Managed engine | Updated separately with `pi update --engine` |
 | Startup model | Selected by the active Pi engine from its settings and catalog |
@@ -142,6 +142,15 @@ Run `pi update --help` for additional options.
 
 ### Commands
 
+Run `pi -r` or `pi --resume` to choose a saved chat. Type to search chat names
+and conversation text, use Up/Down to choose, and press Enter to continue.
+Tab switches between the current project and all projects in the active profile;
+Escape cancels. Inside Pi, `/resume` opens the same screen. `pi -c` continues the
+most recent chat in the current project directly.
+
+Use `pi --resume SESSION_ID` or `pi -r SESSION_ID` to reopen a specific chat
+directly. The exit hint includes that chat's ID and its resume command.
+
 | Command | Shows |
 | :--- | :--- |
 | `/usage` | Active provider, available account usage limits, and local reset times |
@@ -159,7 +168,8 @@ Run `pi update --help` for additional options.
 | `/model [query]` | Search and select a model in the shared full-screen interface |
 | `/skills [query]` | Enable or disable installed skills, skills.sh search, preview, and installation |
 | `/agents [run NAME TASK]` | Configured subagents, with creation, editing, and direct runs |
-| `/clear` | Clears the conversation and starts a new session; `/new` is the same command |
+| `/clear` | Starts a fresh conversation while keeping the current model, effort, and work mode; `/new` is the same command |
+| `/resume` | Search saved chats and continue a selected conversation |
 
 The commands open full terminal screens below the Pi header, aligned to its two-column inset. They have no enclosing border. Read-only screens show `esc to close` in the input row; `/skills` uses that row for search and filtering. Usage bars show the remaining allowance; configuration values align in columns. The shared white and gray palette lives in `ui/theme.ts`, ready for a future `/theme` command. Press **Escape** or **Enter** to close a read-only screen. Scroll with **↑/↓**, **Page Up/Down**, **Home/End**, or the mouse wheel. Opening a viewer does not call a model. Starting `/plan <goal>` or choosing Execute sends the corresponding task to the agent.
 

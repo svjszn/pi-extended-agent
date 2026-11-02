@@ -202,7 +202,7 @@ test("/new reaches this interface's /clear, with arguments and spacing preserved
 
 test("clearing starts a new session and refuses while the agent is working", async () => {
   const commands = new Map();
-  sessionCommand(({ registerCommand: ((name, command) => commands.set(name, command)) satisfies ExtensionAPI["registerCommand"] } as unknown as Parameters<typeof sessionCommand>[0]));
+  sessionCommand(({ on() {}, getThinkingLevel: () => "medium", registerCommand: ((name, command) => commands.set(name, command)) satisfies ExtensionAPI["registerCommand"] } as unknown as Parameters<typeof sessionCommand>[0]));
   assert.deepEqual([...commands.keys()], ["clear"]);
   const calls: string[] = [], notices: [string,string,string][] = [];
   // Pi invalidates the context that started the replacement; a stale use throws
@@ -210,7 +210,8 @@ test("clearing starts a new session and refuses while the agent is working", asy
   const ctx = (idle: boolean, result = { cancelled: false }) => {
     let stale = false;
     return {
-      hasUI: true, isIdle: () => idle,
+      hasUI: true, isIdle: () => idle, cwd: process.cwd(),
+      sessionManager: { getSessionFile: () => undefined, getEntries: () => [] },
       newSession: async (options: {withSession?: (ctx: unknown) => Promise<void>}) => {
         calls.push("newSession");
         if (!result.cancelled) {

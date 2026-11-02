@@ -60,3 +60,7 @@ to leave planning without executing the plan.
 
 Plans are saved with the session and survive compaction and restarts. Resume
 the same session to continue working with its plan.
+
+`/new` and `/clear` keep plan mode enabled, but start with an empty plan for the
+new conversation. The previous goal, steps, and execution approval stay with the
+old session. Prepare the new plan and approve it with `/plan execute`.

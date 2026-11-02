@@ -3,7 +3,8 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import type { AgentDefinition, AgentScope } from "../lib/agents.js";
 import type { SubagentRequest, ApprovalDecision, GuardState } from "../lib/subagent.js";
-import type { ExtensionAPI, ToolInfo, BeforeAgentStartEvent, BeforeAgentStartEventResult, ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ToolInfo, BeforeAgentStartEvent, BeforeAgentStartEventResult, ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
+import type { PanelFactory } from "./helpers.ts";
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
@@ -14,6 +15,7 @@ const { serializeApproval } = await import(new URL("../dist/lib/approval-queue.j
 const { isDelegationTool } = await import(new URL("../dist/lib/workspace-tools.js", import.meta.url).href) as typeof import("../lib/workspace-tools.js");
 const { createPermissionApprovalScreen } = await import(new URL("../dist/ui/permissions-screen.js", import.meta.url).href) as typeof import("../ui/permissions-screen.js");
 const { createUiTheme } = await import(new URL("../dist/ui/theme.js", import.meta.url).href) as typeof import("../ui/theme.js");
+const { openAgentEditor } = await import(new URL("../dist/ui/agents-screen.js", import.meta.url).href) as typeof import("../ui/agents-screen.js");
 import { createRequire, findPackageJSON } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -339,6 +341,40 @@ test("saving and editing a no-tools agent never restores the engine defaults", a
   await runSubagent({ definition: edited, task: "Report only", cwd: root.cwd, agentDir: root.agentDir,
     mode: "full", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory() });
   assert.deepEqual(declaredTools(seen[0]), []);
+});
+
+test("the agent editor saves explicit tool restrictions and cancels without changing the definition", async (t) => {
+  const root = paths(t);
+  const store = new AgentStore(root);
+  store.save("global", { ...definition, description: "Read: report # findings", tools: [], model: "fixture" });
+  const existing = store.find(definition.name)!;
+  for (const key of ["\x13", "\x1b"]) {
+    const ctx = { cwd: root.cwd, ui: {
+      async custom(create: PanelFactory) {
+        let closed = false;
+        const tui = { children: [], terminal: { rows: 30, columns: 100 }, requestRender() {} };
+        const panel = create(tui, createUiTheme(), {}, () => { closed = true; });
+        try {
+          await panel.ready;
+          for (const [width, rows] of [[100, 30], [24, 12], [8, 8]]) {
+            tui.terminal.rows = rows;
+            const lines = panel.render(width);
+            assert.equal(lines.length, rows);
+            assert.ok(lines.every(line => measure.visibleWidth(line) <= width));
+          }
+          panel.handleInput(key);
+          assert.equal(closed, true);
+        } finally { panel.dispose(); }
+      },
+    } } as unknown as ExtensionCommandContext;
+    const saved = await openAgentEditor({ pi: { getThinkingLevel: () => "off" } as ExtensionAPI, ctx, existing, measure });
+    if (key === "\x13") {
+      assert.deepEqual(saved, { scope: "global", draft: {
+        name: existing.name, description: existing.description, prompt: existing.prompt, tools: [], model: "fixture",
+      } });
+    } else assert.equal(saved, undefined);
+    assert.deepEqual(store.find(definition.name), existing);
+  }
 });
 
 test("a resolved Pi prompt with a provider error fails the subagent instead of returning a report", async (t) => {

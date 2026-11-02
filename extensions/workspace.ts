@@ -1,4 +1,4 @@
-import { createCodemodeExtension, getAgentDir, getPackageDir, VERSION } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getPackageDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { BuildSystemPromptOptions, ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ import { readPermissionMode, PERMISSION_DESCRIPTIONS } from "../lib/permissions.
 import type { WorkspacePage } from "../ui/workspace-screen.js";
 import { CODE_MODE_CHANGED, CODE_MODE_ENTRY, readCodeMode } from "../lib/code-mode.js";
 import type { CodeModeState, WorkMode } from "../lib/code-mode.js";
+import { initialWorkMode } from "../lib/session-preferences.js";
 
 const string = { type: "string" };
 const TASK_WORKFLOW_GUIDANCE = "Keep work within the user's requested scope. When independent reads or searches are already known, batch them using available tools rather than spending one model round trip on each. Return relevant, bounded search results and reuse established findings; reread when edits or new evidence justify it. Preserve dependencies and serialize shared-state mutations. Run required validation, and finish when the requested result and checks are satisfied. Broaden investigation or repeat successful checks when new evidence, changed code, or explicit instructions warrant it. Never bypass permissions or conceal failed or unavailable checks to save time.";
@@ -75,12 +76,6 @@ async function edit(pi: ExtensionAPI, ctx: ExtensionCommandContext, title: strin
 
 export default function workspace(pi: ExtensionAPI) {
   let code: CodeModeState = { enabled: false, added: false };
-  // Keep the engine's implementation and sandbox. Override presentation only
-  // while this mode is selected; auto mode keeps the user's native preferences.
-  const nativeCodemode = createCodemodeExtension()({ ...pi, getSettings() {
-    const settings = pi.getSettings();
-    return code.enabled ? { ...settings, codemode: { ...settings.codemode, mode: "on" } } : settings;
-  } });
   let memory: MemoryStore, plans: PlanStore, prompts: PromptStore;
   let sessionAddition = "", activeSession = "", stateError: string | undefined;
   let storageReady = false;
@@ -125,8 +120,15 @@ export default function workspace(pi: ExtensionAPI) {
       // Session metadata remains a fail-closed marker if the saved plan has gone missing.
       const entries = ctx.sessionManager.getEntries();
       const last = entries.filter((e) => e.type === "custom" && e.customType === PLAN_ENTRY).at(-1);
+      const inheritedMode = initialWorkMode(entries);
+      if (!plan && !last && inheritedMode === "plan") {
+        plan = plans.save({ version: 1, status: "planning", goal: "", steps: [], areas: [], checks: [],
+          updatedAt: "", toolsBefore: pi.getActiveTools() });
+        pi.appendEntry(PLAN_ENTRY, plan);
+      }
       if (!plan && last && isPlanning((last as { data?: Plan }).data)) throw new Error("The active plan file is missing. Use /plan cancel or start a new plan.");
       code = readCodeMode(entries);
+      if (inheritedMode === "code" && !entries.some((entry) => entry.type === "custom" && entry.customType === CODE_MODE_ENTRY)) setCodeMode(true);
       // The planning barrier wins if a replacement interrupted a transition.
       if (isPlanning(plan) && code.enabled) setCodeMode(false);
       else if (code.enabled) {
@@ -413,5 +415,4 @@ export default function workspace(pi: ExtensionAPI) {
       } catch (error) { notify(ctx, String(error instanceof Error ? error.message : error), true); }
     },
   });
-  return nativeCodemode;
 }

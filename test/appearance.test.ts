@@ -95,9 +95,10 @@ test("legacy logo survives restart, preserves accent choices, and fits the share
     { version: "1", getModel: () => undefined, getThinkingLevel: () => "off" });
   t.after(() => header.dispose());
   const lines = header.render(80).map(measure.stripTerminalSequences);
-  assert.equal(lines[0].slice(2, 10), "████████");
-  assert.equal(lines[3].slice(2, 10), "███  ███");
-  assert.match(header.render(80)[0], /38;2;78;186;101m████████/);
+  assert.equal(lines.length, 3, "the wider legacy mark aligns with the three header labels");
+  assert.equal(lines[0].slice(2, 10), "▀██▀▀██▀");
+  assert.equal(lines[2].slice(2, 10), "▄██▖▗██▄");
+  assert.match(header.render(80)[0], /38;2;78;186;101m▀██▀▀██▀/);
   for (const width of [1, 8, 24, 32, 80]) {
     assert.ok(header.render(width).every((line) => measure.visibleWidth(line) <= width));
   }

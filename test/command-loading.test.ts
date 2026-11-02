@@ -40,7 +40,7 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
     const loader = new api.DefaultResourceLoader({ cwd: directory, agentDir: present(process.env.PI_CODING_AGENT_DIR),
       settingsManager: api.SettingsManager.inMemory(), noExtensions: true, noSkills: true, noThemes: true,
       noPromptTemplates: true, noContextFiles: true, additionalExtensionPaths: [root] });
-    const selectors = ["appearance", "config", "effort", "permissions", "skills", "workspace"].map(name => `ui/${name}-screen.js`);
+    const selectors = ["agents", "appearance", "config", "effort", "permissions", "skills", "workspace"].map(name => `ui/${name}-screen.js`);
     const deferred = [...selectors, "ui/command-views.js", "ui/context-view.js", "ui/status-view.js",
       "lib/activity.js", "lib/config.js", "lib/skills.js", "lib/status.js", "lib/usage.js", "bin/update.js", "bin/verify-runtime.js"];
     let views = 0;
@@ -49,10 +49,11 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
       const loaded = loader.getExtensions(); assert.deepEqual(loaded.errors, []);
       assert.equal(loaded.extensions.length, JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions.length);
       const commands = new Map(loaded.extensions.flatMap(extension => [...extension.commands].map(([name, command]) => [name, commandFixture(command)] as const)));
-      for (const name of ["usage", "stats", "status", "context", "config", "skills", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
+      for (const name of ["agents", "usage", "stats", "status", "context", "config", "skills", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
         assert.ok(commands.has(name), `Missing /${name} before opening any screen`);
       }
       assert.equal(commands.has("perf"), false);
+      assert.ok(loaded.extensions.some(extension => extension.tools.has("task")), "Missing subagent task tool");
       assert.equal(nativeLoads.has(pathToFileURL(runtime.entry).href), !bound, "Compiled imports must use the selected host, not a duplicate SDK");
       const workspace = loaded.extensions.find(extension => extension.tools.has("project_memory"));
       assert.equal(present(workspace).sourceInfo.path, join(root, "dist/extensions/workspace.js"), "Tool provenance must stay unchanged");
@@ -93,7 +94,7 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
         assert.equal(views, 0);
         continue;
       }
-      for (const name of ["stats", "status", "context", "config", "skills", "permissions"]) {
+      for (const name of ["agents", "stats", "status", "context", "config", "skills", "permissions"]) {
         await present(commands.get(name)).handler("", ctx);
         assert.notEqual(notices.at(-1)?.type, "error", `${name}: ${notices.at(-1)?.message}`);
       }
@@ -102,7 +103,7 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
       for (const [name, title, args = ""] of [["skills", /Skills/], ["stats", /Statistics/], ["usage", /Usage/], ["status", /Status/],
         ["context", /Context/], ["config", /Configuration/], ["permissions", /Permissions/], ["theme", /Theme/],
         ["color", /Color/], ["memory", /Memory/], ["plan", /Plan/], ["prompt", /System prompt/],
-        ["prompt", /Prompt/, "session"], ["effort", /Effort/]] as [string, RegExp, string?][]) {
+        ["prompt", /Prompt/, "session"], ["effort", /Effort/], ["agents", /Subagents/]] as [string, RegExp, string?][]) {
         expected = title;
         ctx.model = name === "effort" ? { id: "fixture", reasoning: true, thinkingLevelMap: { high: "high", max: null } } : undefined;
         const before = views;
@@ -177,6 +178,6 @@ if (process.argv[2] === "--probe") {
       env: { ...process.env, PI_CODING_AGENT_DIR: join(directory, "profile"), PI_EXTENDED_RUNTIME_DIR: join(directory, "runtimes"), PI_OFFLINE: "1" },
     });
     assert.equal(result.status, 0, result.stderr.slice(-4000));
-    assert.deepEqual(JSON.parse(present(result.stdout.trim().split("\n").at(-1))), { views: failure ? 0 : 28, failApproval: failure, bound: mode !== "unbound" });
+    assert.deepEqual(JSON.parse(present(result.stdout.trim().split("\n").at(-1))), { views: failure ? 0 : 30, failApproval: failure, bound: mode !== "unbound" });
   });
 }
