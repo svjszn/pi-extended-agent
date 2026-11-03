@@ -382,7 +382,7 @@ test("real Pi hooks gate nested tools during planning without changing existing 
   const preview: string[] = [], originalError = console.error;
   try { console.error = (message) => preview.push(String(message)); await session.prompt("/prompt"); }
   finally { console.error = originalError; }
-  assert.match(preview.join("\n"), /expert coding assistant/);
+  assert.match(preview.join("\n"), /coding assistant/);
   assert.match(preview.join("\n"), /Use concise Russian replies/);
   assert.equal(session.agent.state.messages.length, beforePreview);
   assert.equal(isWorkspaceBookkeeping("project_memory", { action: "read" }, [{ name: "project_memory", sourceInfo: {scope: "user" as const, origin: "top-level" as const, source: "local",  path: "/external.js" } }]), false);

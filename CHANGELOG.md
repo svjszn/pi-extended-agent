@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.4.0
+
+- Update the pinned bundled Pi Coding Agent to 1.5.0. Extend the candidate-engine compatibility probe to cover scout/lens commands, question and delegation tools, and subagent activity in the input status row.
+
+- Pass manual subagent reports into the main session and let the main agent present conclusions as a normal chat response instead of printing raw Markdown in a notification. Preserve findings, references, limits, and session resume; queue a follow-up if the parent is busy, and discard cancelled or stale reports.
+
+- Show subagent activity in the existing Working line immediately above the input, with an animated indicator, agent name, elapsed time, current activity, tool-call count, and cancellation hint. Share the row across concurrent runs, preserve native status and effort/update labels, and clear activity and animation on completion, failure, cancellation, or session replacement without exposing the child transcript.
+
+- Add `/scout TASK` for direct codebase research and `/lens [TASK]` for independent review, defaulting to current working-tree changes. Reuse subagent overrides, permissions, planning barriers, cancellation, and shutdown cleanup.
+
+- Show available updates immediately for 12 seconds, alternating with 24 seconds of effort, so the release version and update command remain readable.
+
+- Include scout for codebase research and lens for independent code review out of the box. Keep intermediate work in the child context, inherit the current model and effort, and preserve permissions and planning limits. Resolve trusted project and profile overrides ahead of bundled defaults, save edits as user overrides, and restore the bundled agent when an override is deleted.
+
 - Migrate the remaining ES module sources to TypeScript, including build/release scripts and documentation tooling/configuration. Generate the stable `bin/pi.mjs` npm launcher from `bin/pi.ts`, check script types, and remove redundant declaration files.
 
 - Add the `ask_user` tool with a shared question screen: single/multiple choice, recommended options, written answers and extra details, mouse/keyboard navigation, and review before sending. Serialize questions with permission dialogs, cancel stale requests on abort/session replacement, and allow only the origin-verified question tool through read-only and planning guards without granting execution approval.

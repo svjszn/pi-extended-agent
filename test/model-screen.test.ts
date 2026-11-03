@@ -68,7 +68,7 @@ test("model selector uses the shared frame, filters models, and preserves native
     const panel = state.panel;
     await panel.ready;
     const plain = () => measure.stripTerminalSequences(panel.render(100).join("\n"));
-    assert.match(plain(), /pi coding agent v1\.4\.0/);
+    assert.ok(plain().includes(`pi coding agent v${runtime.version}`));
     assert.match(plain(), /● model-00 \[example\] current/);
     assert.match(plain(), /auto mode/);
     panel.handleInput("model-24");

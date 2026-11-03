@@ -27,8 +27,8 @@
 
 | Component | Version / default |
 | :--- | :--- |
-| Package | `pi-extended-agent` · `1.3.0` |
-| Bundled Pi fallback | `1.4.0` |
+| Package | `pi-extended-agent` · `1.4.0` |
+| Bundled Pi fallback | `1.5.0` |
 | Managed engine | Updated separately with `pi update --engine` |
 | Startup model | Selected by the active Pi engine from its settings and catalog |
 | Node.js | `>=22.19.0` |
@@ -36,7 +36,7 @@
 Pi provides the agent loop, tools, authentication, and sessions. This package provides the CLI entry point, interface extensions, and engine updater. Pi is installed automatically; users do not install it separately.
 
 ```text
-  ██████     pi coding agent v1.4.0
+  ██████     pi coding agent v1.5.0
   ██  ██     Your model with medium effort
   ████  ██   ~/project
   ██    ██
@@ -168,6 +168,8 @@ directly. The exit hint includes that chat's ID and its resume command.
 | `/model [query]` | Search and select a model in the shared full-screen interface |
 | `/skills [query]` | Enable or disable installed skills, skills.sh search, preview, and installation |
 | `/agents [run NAME TASK]` | Configured subagents, with creation, editing, and direct runs |
+| `/scout TASK` | Research the codebase in a separate context |
+| `/lens [TASK]` | Review current working-tree changes or a specified scope in a separate context |
 | `/clear` | Starts a fresh conversation while keeping the current model, effort, and work mode; `/new` is the same command |
 | `/resume` | Search saved chats and continue a selected conversation |
 
@@ -266,6 +268,14 @@ pi --no-extensions
 ### Delegate to subagents
 
 `/agents` lists the configured subagents, creates and edits them, and runs one directly with `/agents run NAME TASK`. A subagent is a separate agent run with its own instructions, tool selection, and context; it receives one task and returns a single report, so its intermediate work never enters your conversation. The model can delegate on its own with the `task` tool when a task is self-contained.
+
+Two agents are available out of the box: **scout** researches the codebase and returns concise findings with file and line references; **lens** independently reviews changes for actionable bugs and regressions. Both inherit the current model and effort. Scout has only read, find, grep, and ls; lens also has bash for Git inspection, subject to the current permissions and planning barrier. In Read only or Plan mode, supply a diff or explicit review files when lens cannot inspect Git through shell commands.
+
+Subagent activity appears in the existing Working line immediately above the input, with the agent's name, animated indicator, elapsed time, activity or current tool, tool-call count, and cancellation hint. Concurrent runs share that line: the most recently started agent is shown with a count of other active runs. The status clears when the run ends. Intermediate reasoning, tool arguments, and results stay out of the parent conversation.
+
+After `/scout`, `/lens`, or `/agents run`, the final report enters the main agent's context and session history. The main agent writes the conclusions as a normal chat response, preserving findings, code references, and verification limits. If it is busy, the report waits as a follow-up. Only the bounded report is transferred; intermediate work stays in the child context. Cancelled and failed runs do not start a summary.
+
+Use `/scout trace how engine updates are activated` for research or `/lens` to review current staged, unstaged, and untracked changes. `/lens TASK` selects an explicit review scope. Both direct commands use the same permissions and cancellation as `/agents run NAME TASK`. Built-in instructions load into the child run; the parent prompt includes only the agents' names and descriptions. A trusted project definition takes precedence over a profile definition, which takes precedence over a bundled default. Editing a built-in agent saves a global or project override. Deleting that override restores the lower-priority definition; bundled defaults cannot be deleted and create no files in your profile.
 
 Definitions are Markdown files with frontmatter, either in `.pi/agents/NAME.md` in the project or `AGENT_DIR/agents/NAME.md` in the profile. Project definitions shadow profile definitions with the same name and are ignored until Pi trusts the project. `description` tells the model when to delegate; `tools` is optional and narrows the selection by name or `*` pattern, where `tools: []` means none; `model` is optional and keeps the current model when absent. The body is added to Pi's own system prompt rather than replacing it. A definition that cannot be read is listed by name so the remaining agents keep working.
 

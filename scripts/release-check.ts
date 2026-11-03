@@ -61,7 +61,8 @@ try {
     : run(shim, args, { cwd: project, env, capture: true });
   const versionOutput = launch(["--version"]).stdout;
   assert.ok(versionOutput.includes(`Pi Extended Agent ${manifest.version}`));
-  assert.match(versionOutput, /Pi Coding Agent 1\.4\.0/);
+  assert.ok(versionOutput.includes(`Pi Coding Agent ${manifest.dependencies["@earendil-works/pi-coding-agent"]}`),
+    "Installed launcher does not use the pinned bundled engine.");
   assert.match(launch(["--help"]).stdout, /Usage|Options|coding agent/i);
   const auth = run(process.execPath, [join(installed, "bin", "pi.mjs"), "auth", "check", "--provider", "openai-codex", "--no-refresh", "--json"],
     { cwd: project, env, capture: true, accepted: [0, 1, 2] });

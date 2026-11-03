@@ -59,7 +59,7 @@ test("login method and searchable provider choices use the shared full-screen fr
   const { host, state, latest, plain } = fixture();
   host.showLoginAuthTypeSelector();
   await present(latest()).panel.ready;
-  assert.match(plain(), /pi coding agent v1\.4\.0/);
+  assert.ok(plain().includes(`pi coding agent v${runtime.version}`));
   assert.match(plain(), /Login/);
   assert.doesNotMatch(plain(), /╭|╰/);
   present(latest()).panel.handleInput("\r");

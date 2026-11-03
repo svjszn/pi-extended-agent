@@ -3,6 +3,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { checkForReleaseUpdates } from "../lib/update-notice.js";
 import { setAvailableUpdates, setUpdateNoticeVisible, visibleUpdateLabel } from "../lib/update-status.js";
 
+const UPDATE_DISPLAY_MS = 12_000;
+const EFFORT_DISPLAY_MS = 24_000;
+
 export default function updateNotice(pi: ExtensionAPI, check = checkForReleaseUpdates) {
   let started = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -22,10 +25,10 @@ export default function updateNotice(pi: ExtensionAPI, check = checkForReleaseUp
         if (controller.signal.aborted) return;
         setUpdateNoticeVisible(showUpdate);
         ctx.ui.setStatus("pi-update", visibleUpdateLabel());
-        timer = setTimeout(() => rotate(!showUpdate), showUpdate ? 4000 : 8000);
+        timer = setTimeout(() => rotate(!showUpdate), showUpdate ? UPDATE_DISPLAY_MS : EFFORT_DISPLAY_MS);
         timer.unref?.();
       };
-      rotate(false);
+      rotate(true);
     }).catch(() => {});
   });
   pi.on("session_shutdown", () => {

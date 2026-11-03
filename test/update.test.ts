@@ -10,13 +10,17 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { tmpdir } from "node:os";
 const { captureCommand, planUpdate, updateEngine, latestVersion } = await import(new URL("../dist/bin/update.js", import.meta.url).href) as typeof import("../bin/update.js");
-const { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime, describeRuntime } = await import(new URL("../dist/bin/runtime.js", import.meta.url).href) as typeof import("../bin/runtime.js");
+const { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime, describeRuntime, bundledRuntime } = await import(new URL("../dist/bin/runtime.js", import.meta.url).href) as typeof import("../bin/runtime.js");
 const { checkForEngineUpdate, checkForAgentUpdate, checkForUpdates, checkForReleaseUpdates, UPDATE_CHECK_INTERVAL } = await import(new URL("../dist/lib/update-notice.js", import.meta.url).href) as typeof import("../lib/update-notice.js");
 const { installAgent, updateAgent } = await import(new URL("../dist/bin/self-update.js", import.meta.url).href) as typeof import("../bin/self-update.js");
 const { default: updateNotice } = await import(new URL("../dist/extensions/update-notice.js", import.meta.url).href) as typeof import("../extensions/update-notice.js");
 const { availableUpdateLabel, setAvailableUpdates, visibleUpdateLabel } = await import(new URL("../dist/lib/update-status.js", import.meta.url).href) as typeof import("../lib/update-status.js");
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+// Upgrade scenarios need a target newer than the bundled engine, including
+// after the pinned dependency advances to what used to be the fixture target.
+const [engineMajor, engineMinor] = bundledRuntime().version.split(".").map(Number);
+const nextEngineVersion = `${engineMajor}.${engineMinor + 1}.0`;
 const fixtureRoot = resolve(root, ".local/update-tests");
 function fixture(t: TestContext) {
   mkdirSync(fixtureRoot, { recursive: true });
@@ -144,13 +148,13 @@ test("verified engine activation preserves the package and launcher", async (t) 
   const manifest = readFileSync(join(root, "package.json"));
   const launcher = readFileSync(join(root, "bin/pi.mjs"));
   const versions: string[] = [];
-  await updateEngine(root, { version: "1.5.0" }, { ...quiet, directory,
+  await updateEngine(root, { version: nextEngineVersion }, { ...quiet, directory,
     async install(version, dir) { assert.equal(dir, directory); stage(dir, version); },
     async verify(runtime) { versions.push(runtime.version); },
   });
-  assert.deepEqual(versions, ["1.5.0"]);
-  assert.equal(selectedRuntime(directory).version, "1.5.0");
-  assert.deepEqual(readRuntimeState(directory), { version: "1.5.0", previous: null });
+  assert.deepEqual(versions, [nextEngineVersion]);
+  assert.equal(selectedRuntime(directory).version, nextEngineVersion);
+  assert.deepEqual(readRuntimeState(directory), { version: nextEngineVersion, previous: null });
   assert.deepEqual(readFileSync(join(root, "package.json")), manifest);
   assert.deepEqual(readFileSync(join(root, "bin/pi.mjs")), launcher);
 });
@@ -158,7 +162,7 @@ test("verified engine activation preserves the package and launcher", async (t) 
 test("failed installation or incompatible UI leaves the previous engine active", async (t) => {
   for (const failure of ["install", "verify"]) {
     const directory = fixture(t);
-    await assert.rejects(updateEngine(root, { version: "1.5.0" }, { ...quiet, directory,
+    await assert.rejects(updateEngine(root, { version: nextEngineVersion }, { ...quiet, directory,
       async install(version, dir) { if (failure === "install") throw new Error("install failed"); stage(dir, version); },
       async verify() { throw new Error("incompatible UI"); },
     }), /active engine was not changed/);
@@ -169,14 +173,14 @@ test("failed installation or incompatible UI leaves the previous engine active",
 
 test("offline updates reuse complete cached engines and rollback restores the bundled engine", async (t) => {
   const directory = fixture(t);
-  stage(directory, "1.5.0");
+  stage(directory, nextEngineVersion);
   stage(directory, "1.3.0");
-  assert.deepEqual(cachedVersions(directory), ["1.3.0", "1.5.0"]);
+  assert.deepEqual(cachedVersions(directory), ["1.3.0", nextEngineVersion]);
   const services = { ...quiet, directory, async install() { assert.fail("cached engine must not be reinstalled"); }, async latest() { assert.fail("offline update must not fetch metadata"); } };
   await updateEngine(root, { offline: true }, services);
-  assert.equal(readRuntimeState(directory).version, "1.5.0");
+  assert.equal(readRuntimeState(directory).version, nextEngineVersion);
   await updateEngine(root, { rollback: true }, services);
-  assert.deepEqual(readRuntimeState(directory), { version: null, previous: "1.5.0" });
+  assert.deepEqual(readRuntimeState(directory), { version: null, previous: nextEngineVersion });
 });
 
 test("update check does not install or activate anything", async (t) => {
@@ -327,8 +331,8 @@ test("update notification never blocks startup, checks once, and cancels on shut
   assert.equal(calls, 1);
   present(finish)([{ kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "An agent update is available." }]);
   await new Promise(setImmediate);
-  assert.equal(statuses.at(-1), undefined);
-  assert.equal(visibleUpdateLabel(), undefined);
+  assert.equal(statuses.at(-1), "Update 1.2.0 · pi update");
+  assert.equal(visibleUpdateLabel(), "Update 1.2.0 · pi update");
   assert.equal(availableUpdateLabel(), "Update 1.2.0 · pi update");
   assert.equal(availableUpdateLabel(12), "↑ 1.2.0");
   handlers.get("session_shutdown")();
@@ -343,29 +347,30 @@ test("update notification never blocks startup, checks once, and cancels on shut
   assert.equal(availableUpdateLabel(), undefined);
 });
 
-test("update slot rotates while idle and stops repainting on shutdown or when no update exists", async (t) => {
+test("engine update stays readable for 12 seconds, alternates with effort for 24, and stops repainting on shutdown", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const handlers = new Map(), statuses: unknown[] = [];
   const pi = { on: ((event, handler) => { handlers.set(event, handler); return () => {}; }) satisfies ExtensionAPI["on"] };
   const ctx = { mode: "tui", ui: { setStatus: (_key: string, text?: string) => statuses.push(text) } };
-  const update: ReleaseUpdate = { kind: "agent", version: "1.2.0", current: "1.1.0", command: "pi update", message: "Update available" };
+  const update: ReleaseUpdate = { kind: "engine", version: "1.5.0", current: "1.4.0", command: "pi update --engine", message: "Update available" };
   updateNotice((pi as unknown as Parameters<typeof updateNotice>[0]), async () => [update]);
   t.after(() => handlers.get("session_shutdown")());
   handlers.get("session_start")({}, ctx);
   await Promise.resolve();
-  assert.equal(visibleUpdateLabel(), undefined);
+  assert.equal(visibleUpdateLabel(), "Pi update 1.5.0 · pi update --engine");
   const count = statuses.length;
-  t.mock.timers.tick(7999);
-  assert.equal(statuses.length, count, "effort stays visible without per-frame repaints");
-  t.mock.timers.tick(1);
-  assert.equal(visibleUpdateLabel(), "Update 1.2.0 · pi update");
-  assert.equal(statuses.at(-1), visibleUpdateLabel());
-  t.mock.timers.tick(3999);
-  assert.equal(visibleUpdateLabel(), "Update 1.2.0 · pi update");
+  t.mock.timers.tick(11999);
+  assert.equal(statuses.length, count, "the update remains readable without per-frame repaints");
+  assert.equal(visibleUpdateLabel(), "Pi update 1.5.0 · pi update --engine");
   t.mock.timers.tick(1);
   assert.equal(visibleUpdateLabel(), undefined);
-  t.mock.timers.tick(8000);
-  assert.equal(visibleUpdateLabel(), "Update 1.2.0 · pi update");
+  assert.equal(statuses.at(-1), visibleUpdateLabel());
+  t.mock.timers.tick(23999);
+  assert.equal(statuses.length, count + 1, "effort remains visible without extra repaints");
+  assert.equal(visibleUpdateLabel(), undefined);
+  t.mock.timers.tick(1);
+  assert.equal(visibleUpdateLabel(), "Pi update 1.5.0 · pi update --engine");
+  assert.equal(statuses.length, count + 2);
   handlers.get("session_shutdown")();
   const stopped = statuses.length;
   t.mock.timers.tick(60000);

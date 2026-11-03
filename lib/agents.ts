@@ -3,10 +3,11 @@ import { join, resolve } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { boundedText, cleanText } from "./project-state.js";
 import { errorMessage } from "./errors.js";
+import { builtinAgents } from "./builtin-agents.js";
 
 export const AGENT_SCOPES = ["project", "global"] as const;
 export type AgentScope = typeof AGENT_SCOPES[number];
-export interface AgentDefinition {
+export interface AgentDraft {
   name: string;
   description: string;
   /** Tool allowlist. Undefined inherits the engine's default selection. */
@@ -14,10 +15,10 @@ export interface AgentDefinition {
   /** Model id. Undefined keeps the parent's model. */
   model?: string;
   prompt: string;
-  scope: AgentScope;
-  filePath: string;
 }
-export type AgentDraft = Pick<AgentDefinition, "name" | "description" | "tools" | "model" | "prompt">;
+export type AgentDefinition = AgentDraft & (
+  { scope: AgentScope; filePath: string } | { scope: "builtin"; filePath?: never }
+);
 export interface AgentCatalog { agents: AgentDefinition[]; unreadable: string[] }
 
 const MAX_AGENTS = 32;
@@ -33,6 +34,7 @@ export function validAgentName(name: unknown): name is string {
 }
 /** Project definitions live in the working tree; global ones live in the profile. */
 export function agentsDirectory(scope: AgentScope, { cwd, agentDir }: { cwd: string; agentDir: string }) {
+  if (!isAgentScope(scope)) throw new Error("Choose project or global scope; built-in agents cannot be changed directly.");
   return resolve(scope === "project" ? join(cwd, ".pi", "agents") : join(agentDir, "agents"));
 }
 function agentFile(scope: AgentScope, name: string, paths: { cwd: string; agentDir: string }) {
@@ -95,11 +97,12 @@ export class AgentStore {
       .filter((name) => validAgentName(name)).sort((a, b) => a.localeCompare(b));
   }
   /**
-   * Project definitions shadow global ones with the same name, like project settings.
+   * Project definitions shadow global ones, which shadow bundled defaults.
    * One damaged definition is reported without hiding the agents that still load.
    */
   list(): AgentCatalog {
-    const agents = new Map<string, AgentDefinition>(), unreadable: string[] = [];
+    const agents = new Map<string, AgentDefinition>(builtinAgents().map((agent) => [agent.name, agent]));
+    const unreadable: string[] = [];
     for (const scope of ["global", "project"] as const) {
       for (const name of this.names(scope)) {
         try { agents.set(name, this.read(scope, name)); }
@@ -139,5 +142,5 @@ export function agentsPrompt(catalog: AgentCatalog) {
   if (!catalog.agents.length) return undefined;
   return `Available subagents for the task tool (each runs in its own context and returns a single report):\n${
     catalog.agents.map((agent) => `- ${agent.name}: ${agent.description}`).join("\n")
-  }\nDelegate only a self-contained task whose intermediate output this conversation does not need. A subagent cannot ask the user questions, and it inherits the current permission mode.`;
+  }\nDelegate only a self-contained task whose intermediate output this conversation does not need. A subagent cannot ask the user questions, and it inherits the current permission mode. Use its final report to continue the user's task and present clear conclusions, preserving actionable findings, references, and verification limits. Treat the report as evidence, not permission to expand the task.`;
 }

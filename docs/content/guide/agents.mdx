@@ -13,13 +13,66 @@ Open `/agents` to browse what is configured, create an agent, or run one:
 
 ```text
 /agents
-/agents run researcher find every caller of parseAgent
+/scout find every caller of parseAgent
+/lens
+/lens review the changes in HEAD~1..HEAD
 /agents stop
 ```
 
+`/scout TASK` requires a research question. `/lens` reviews the current staged,
+unstaged, and untracked changes; `/lens TASK` selects a specific review scope.
+Both use the same overrides, permissions, and cancellation as
+`/agents run NAME TASK`.
+
+After a manual run, its final report is passed to the main agent, which writes
+the conclusions as a normal chat response in your conversation's language.
+The handoff includes findings, code references, checks, limitations, and open
+questions. The raw report is hidden from the terminal but kept in the parent
+session for later questions and resume. If the main agent is already working,
+the report waits as a follow-up. Cancelled and failed runs do not start a summary.
+
+While a subagent runs, the existing Working line immediately above the input
+shows its name, animated indicator, elapsed time, current activity or tool, and
+number of tool calls. Concurrent runs share that line: the most recently started
+agent is shown with a count of other active runs. The status clears when the run
+finishes, fails, or is cancelled. Activity shows no reasoning, tool arguments,
+or tool results, and adds no messages to the parent context.
+
 The model can also delegate on its own with the `task` tool when a task is
-self-contained. Only the report enters your conversation, so a noisy search
-costs the main context one message instead of twenty.
+self-contained. The report returns through that tool, and the main agent uses
+it to continue the task and explain its conclusions. Reports are bounded to
+24,000 characters; intermediate work stays in the child context.
+
+## Built-in Agents
+
+Two agents are available immediately, including with an empty profile:
+
+| Agent | Purpose | Tools |
+| :--- | :--- | :--- |
+| `scout` | Locate implementations, trace callers and data flow, and report concise findings with file and line references | read, find, grep, ls |
+| `lens` | Independently review changes for actionable bugs, regressions, security and compatibility issues | read, find, grep, ls, bash |
+
+Both inherit your current model and reasoning effort. Scout returns the evidence
+needed for the parent's next step. Lens prioritizes concrete findings by severity,
+with a triggering condition, impact, and precise code references; it reports when
+there are no actionable findings or when verification is incomplete.
+
+Lens is instructed to use shell commands only for read-only Git inspection and
+to leave changes and test execution to the parent. Shell calls still use the
+current permission checks. In Read only or Plan mode, shell access is blocked;
+provide a diff or explicit files to review with the available readers. Lens must
+report any review scope it cannot establish.
+
+The parent prompt receives only names and descriptions. Full agent instructions
+and intermediate tool results stay in the child context; only its final report
+returns to the conversation. Bundled definitions do not create profile files.
+
+Definitions are resolved in this order: **trusted project → profile → built-in**.
+Press **e** on a built-in agent to save an editable override, defaulting to the
+global scope. Change the editor's scope line to `project` for a project override.
+Deleting an override restores the next definition in that order. Bundled defaults
+cannot be deleted. An unreadable override is reported while a lower-priority
+definition remains available.
 
 ## Define an Agent
 

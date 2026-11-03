@@ -8,6 +8,8 @@ import { flashExpiry, visibleFlash } from "../lib/flash-status.js";
 import { animatedEffort, effortGlow } from "./effort-style.js";
 import { contextTokens } from "./context-format.js";
 import type { RunProgressSnapshot } from "../lib/run-progress.js";
+import { activeSubagentStatus, onSubagentStatusChange } from "../lib/subagent-status.js";
+import { renderSubagentProgress } from "./subagent-progress.js";
 
 const inputInset = (width: number) => Math.min(2, Math.floor(Math.max(0, width - 1) / 2));
 
@@ -29,8 +31,14 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
     private statusRows = 0;
     private animation: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
+    private stopSubagentStatus = onSubagentStatusChange(() => {
+      if (this.disposed) return;
+      if (!activeSubagentStatus() && (ctx.isIdle() || !animatedEffort(effort?.getLevel() ?? "") || visibleUpdateLabel())) this.stopAnimation();
+      this.tui.requestRender();
+    });
     dispose() {
       this.disposed = true;
+      this.stopSubagentStatus();
       this.stopAnimation();
       this.watchProgress(false);
       clearTimeout(this.flashTimer);
@@ -58,7 +66,7 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       if (!enabled || !this.focused) { this.stopAnimation(); return; }
       if (this.animation || this.disposed) return;
       this.animation = setInterval(() => {
-        if (!this.focused || ctx.isIdle() || !animatedEffort(effort?.getLevel() ?? "") || visibleUpdateLabel()) { this.stopAnimation(); return; }
+        if (!this.focused || (!activeSubagentStatus() && (ctx.isIdle() || !animatedEffort(effort?.getLevel() ?? "") || visibleUpdateLabel()))) { this.stopAnimation(); return; }
         this.tui.requestRender();
       }, 80);
       this.animation.unref?.();
@@ -100,7 +108,8 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       const inset = inputInset(width);
       const padding = " ".repeat(inset);
       const inner = Math.max(1, width - inset * 2);
-      const rawStatus = this.statusIndicator?.renderInBorder(inner) ?? "";
+      const subagent = activeSubagentStatus(now());
+      const rawStatus = subagent ? "Working" : this.statusIndicator?.renderInBorder(inner) ?? "";
       const rightWidth = rawStatus ? Math.max(0, inner - 12) : inner;
       // A transient notice takes the corner while it lasts: it reports something
       // the user just did, and the effort level is still one keystroke away.
@@ -110,9 +119,10 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       const label = truncateToWidth(flash ?? update ?? level, rightWidth, "");
       const statusWidth = Math.max(0, inner - (label ? visibleWidth(label) + 2 : 0));
       let status = statusWidth ? truncateToWidth(this.statusIndicator?.renderInBorder(statusWidth) ?? "", statusWidth, "") : "";
+      if (subagent) status = renderSubagentProgress(subagent, statusWidth, now(), status);
       const progress = ctx.getRunProgress?.();
       this.watchProgress(!!progress);
-      if (status && progress) {
+      if (status && progress && !subagent) {
         const seconds = Math.floor(progress.elapsedMs / 1000);
         const duration = seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
           : `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}m ${seconds % 60}s`;
@@ -125,8 +135,8 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
       // session has no effort to show and must not leave a blank line.
       this.statusRows = status || label ? 1 : 0;
       this.scheduleFlashExpiry();
-      const animateLabel = !this.disposed && this.focused && !flash && !update && !!label && animatedEffort(level) && !ctx.isIdle();
-      this.animate(animateLabel);
+      const animateLabel = !this.disposed && this.focused && !flash && !update && !!label && animatedEffort(level) && (!ctx.isIdle() || !!subagent);
+      this.animate(animateLabel || !!subagent);
       this.borderColor = (value) => faintInputRule(theme.fg("inputBorder", value));
       const contentPadding = Math.min(2, Math.max(0, Math.floor((width - 4) / 2)));
       super.setPaddingX(contentPadding);
@@ -174,6 +184,7 @@ export function createEscapeExitEditor(BaseEditor: typeof CustomEditor, matchesK
         this.getText().length === 0 &&
         !this.isShowingAutocomplete() &&
         ctx.isIdle() &&
+        !activeSubagentStatus() &&
         !ctx.hasPendingMessages() &&
         !hasRunningShell(this.tui.children)
       ) {

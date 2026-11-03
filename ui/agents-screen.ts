@@ -50,7 +50,7 @@ export async function openAgentEditor(host: Host & { existing?: AgentDefinition 
   const template: AgentDraft = existing ?? {
     name, description: "", prompt: "Describe what this agent does, how it should work, and what to report back.",
   };
-  const initial = `${SCOPE_LINE}${existing?.scope ?? "global"}\n${renderAgent({ ...template, name })}`;
+  const initial = `${SCOPE_LINE}${existing?.scope === "project" ? "project" : "global"}\n${renderAgent({ ...template, name })}`;
   let saved: string | undefined;
   await host.ctx.ui.custom((tui, _theme, _keys, done) => {
     const { theme, header } = chrome(host);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import type { AgentDefinition, AgentScope } from "../lib/agents.js";
-import type { SubagentRequest, ApprovalDecision, GuardState } from "../lib/subagent.js";
+import type { SubagentRequest, SubagentProgress, ApprovalDecision, GuardState } from "../lib/subagent.js";
 import type { ExtensionAPI, ExtensionCommandContext, ToolInfo, BeforeAgentStartEvent, BeforeAgentStartEventResult, ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
 import type { PanelFactory } from "./helpers.ts";
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
@@ -44,10 +44,10 @@ const builtin: Pick<ToolInfo, "name" | "sourceInfo">[] = ["read", "find", "grep"
 /** Drive the guard the way the engine does, without a model or a real session. */
 type StartHandler = (event: BeforeAgentStartEvent) => BeforeAgentStartEventResult | void;
 type CallHandler = (event: ToolCallEvent) => Promise<ToolCallEventResult | void>;
-function guard(request: Partial<SubagentRequest>, { tools = builtin } = {}) {
+function guard(request: Partial<SubagentRequest>, { tools = builtin, onAllowed = () => {} } = {}) {
   const state: GuardState = { toolCalls: 0, blocked: [] };
   let start!: StartHandler, call!: CallHandler;
-  const inline = createSubagentGuard({ definition, task: "t", cwd: ".", agentDir: ".", mode: "full", planning: false, ...request }, state);
+  const inline = createSubagentGuard({ definition, task: "t", cwd: ".", agentDir: ".", mode: "full", planning: false, ...request }, state, onAllowed);
   assert.ok(typeof inline !== "function");
   inline.factory({
     on(name: string, handler: unknown) {
@@ -60,6 +60,59 @@ function guard(request: Partial<SubagentRequest>, { tools = builtin } = {}) {
     start: (event: BeforeAgentStartEvent) => start(event),
   };
 }
+
+test("a fresh profile has scout and lens without writing definitions or loading their prompts into the parent", (t) => {
+  const root = paths(t, { projectTrusted: false });
+  const store = new AgentStore(root);
+  const catalog = store.list();
+  assert.deepEqual(catalog.agents.map((agent) => agent.name), ["lens", "scout"]);
+  assert.deepEqual(catalog.unreadable, []);
+  for (const agent of catalog.agents) {
+    assert.equal(agent.scope, "builtin");
+    assert.equal(agent.filePath, undefined);
+    assert.equal(agent.model, undefined);
+    assert.match(agent.prompt, new RegExp(`You are ${agent.name}`));
+    assert.match(agentsPrompt(catalog)!, new RegExp(`${agent.name}:`));
+    assert.ok(!agentsPrompt(catalog)!.includes(agent.prompt));
+  }
+  assert.deepEqual(store.find("scout")!.tools, ["read", "find", "grep", "ls"]);
+  assert.deepEqual(store.find("lens")!.tools, ["read", "find", "grep", "ls", "bash"]);
+  assert.equal(existsSync(root.agentDir), false);
+  assert.equal(existsSync(join(root.cwd, ".pi")), false);
+  store.find("scout")!.tools!.push("write");
+  assert.equal(store.find("scout")!.tools!.includes("write"), false);
+  assert.throws(() => store.delete("builtin" as AgentScope, "scout"), /built-in agents cannot be changed directly/);
+  assert.equal(existsSync(root.agentDir), false);
+});
+
+test("user overrides take precedence over bundled agents and deleting them restores the lower scope", (t) => {
+  const root = paths(t), store = new AgentStore(root);
+  const scout = store.find("scout")!;
+  store.save("global", { ...scout, description: "Personal scout", tools: [] });
+  store.save("project", { ...scout, description: "Project scout", tools: ["read"] });
+  assert.equal(store.find("scout")!.scope, "project");
+  assert.deepEqual(store.find("scout")!.tools, ["read"]);
+  const untrusted = new AgentStore({ ...root, projectTrusted: false });
+  assert.equal(untrusted.find("scout")!.scope, "global");
+  assert.deepEqual(untrusted.find("scout")!.tools, []);
+  store.delete("project", "scout");
+  assert.equal(store.find("scout")!.description, "Personal scout");
+  assert.deepEqual(store.find("scout")!.tools, []);
+  store.delete("global", "scout");
+  assert.deepEqual(store.find("scout"), scout);
+  assert.equal(store.list().agents.filter((agent) => agent.name === "scout").length, 1);
+});
+
+test("a damaged override reports its error while retaining the bundled agent", (t) => {
+  const root = paths(t), store = new AgentStore(root);
+  writeAgent(root, "global", "lens", "invalid definition");
+  writeAgent(root, "project", "scout", "invalid definition");
+  const catalog = store.list();
+  assert.deepEqual(catalog.agents.map((agent) => [agent.name, agent.scope]), [["lens", "builtin"], ["scout", "builtin"]]);
+  assert.equal(catalog.unreadable.length, 2);
+  assert.match(catalog.unreadable[0], /^lens \(global\)/);
+  assert.match(catalog.unreadable[1], /^scout \(project\)/);
+});
 
 test("agent definitions parse the stored format and reject unusable ones", () => {
   const parsed = parseAgent(renderAgent({ ...definition, tools: ["read", "grep"], model: "gpt-6.1-sol" }),
@@ -105,7 +158,7 @@ test("project definitions shadow global ones and a damaged file never hides the 
   writeAgent(root, "project", "researcher", renderAgent({ ...definition, description: "project version" }));
   writeAgent(root, "project", "broken", "no frontmatter at all");
   const catalog = store.list();
-  assert.deepEqual(catalog.agents.map((agent) => agent.name), ["researcher", "reviewer"]);
+  assert.deepEqual(catalog.agents.map((agent) => agent.name), ["lens", "researcher", "reviewer", "scout"]);
   assert.equal(store.find("researcher")!.description, "project version");
   assert.equal(store.find("researcher")!.scope, "project");
   assert.equal(catalog.unreadable.length, 1);
@@ -119,7 +172,7 @@ test("an untrusted project contributes no instructions, tools, or saves", (t) =>
   const store = new AgentStore(root);
   writeAgent(root, "project", "researcher", renderAgent({ ...definition, description: "untrusted" }));
   writeAgent(root, "global", "reviewer", renderAgent({ ...definition, name: "reviewer" }));
-  assert.deepEqual(store.list().agents.map((agent) => agent.name), ["reviewer"]);
+  assert.deepEqual(store.list().agents.map((agent) => agent.name), ["lens", "reviewer", "scout"]);
   assert.throws(() => store.save("project", definition), /trusted project/);
 });
 
@@ -130,7 +183,7 @@ test("agents are saved, replaced and deleted per scope", (t) => {
   assert.equal(store.find("researcher")!.description, definition.description);
   store.save("global", { ...definition, description: "updated" });
   assert.equal(store.find("researcher")!.description, "updated");
-  assert.equal(store.list().agents.length, 1);
+  assert.equal(store.list().agents.length, 3);
   store.save("project", { ...definition, description: "project copy" });
   assert.equal(store.find("researcher")!.scope, "project");
   store.delete("project", "researcher");
@@ -212,6 +265,12 @@ test("revoking a run while approval is pending cannot authorize its tool", async
   assert.equal(run.state.toolCalls, 0);
 });
 
+test("cancellation triggered while reporting an admitted call still blocks tool execution", async () => {
+  const controller = new AbortController();
+  const run = guard({ signal: controller.signal }, { onAllowed: () => controller.abort() });
+  assert.match((await run.call("read"))!.reason!, /cancelled/);
+});
+
 test("the guard tells the subagent its report is the only output", async () => {
   const run = guard({ mode: "full" });
   const event = { systemPrompt: "Native", systemPromptOptions: { sections: {} as Record<string, string> } } as BeforeAgentStartEvent;
@@ -268,7 +327,8 @@ test("delegation passes the parent barriers only for our own origin-verified too
 });
 
 /** A fixture provider answers without a network call or a real model. */
-interface FixtureReply { stopReason: "stop" | "error" | "aborted"; text?: string; errorMessage?: string }
+interface FixtureReply { stopReason: "stop" | "error" | "aborted" | "toolUse"; text?: string; errorMessage?: string;
+  tool?: Pick<Extract<AssistantMessage["content"][number], { type: "toolCall" }>, "name" | "arguments"> }
 async function fixtureRuntime(t: TestContext, reply = "Findings: the module is unused.", responses?: FixtureReply[]) {
   const aiManifest = findPackageJSON("@earendil-works/pi-ai", import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createAssistantMessageEventStream } = await import(pathToFileURL(join(dirname(aiManifest!), "dist/compat.js")).href) as typeof import("@earendil-works/pi-ai");
@@ -285,10 +345,11 @@ async function fixtureRuntime(t: TestContext, reply = "Findings: the module is u
       queueMicrotask(async () => {
         await options?.onResponse?.({ status: 200, headers: {} }, model);
         const message: AssistantMessage = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
-          content: response.text ? [{ type: "text", text: response.text }] : [], stopReason: response.stopReason,
+          content: [...(response.text ? [{ type: "text" as const, text: response.text }] : []),
+            ...(response.tool ? [{ type: "toolCall" as const, id: "fixture-call", ...response.tool }] : [])], stopReason: response.stopReason,
           errorMessage: response.errorMessage, timestamp: Date.now(), usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
         stream.push({ type: "start", partial: message });
-        if (response.stopReason === "stop") stream.push({ type: "done", reason: "stop", message });
+        if (response.stopReason === "stop" || response.stopReason === "toolUse") stream.push({ type: "done", reason: response.stopReason, message });
         else stream.push({ type: "error", reason: response.stopReason, error: message });
         stream.end();
       });
@@ -326,6 +387,72 @@ test("a real subagent run carries the agent's instructions, reports back, and le
   assert.match(JSON.stringify(seen[0].messages), /SUBAGENT_TASK: inspect the module/);
   // A subagent writes no transcript: nothing lands in the profile's sessions.
   assert.equal(existsSync(join(root.agentDir, "sessions")), false);
+});
+
+test("subagent progress follows real SDK tool events without exposing arguments, results, or report text", async (t) => {
+  const root = paths(t); profile(t, root);
+  const file = "private-path-sentinel.txt";
+  writeFileSync(join(root.cwd, file), "private-result-sentinel");
+  const { runtime, model } = await fixtureRuntime(t, "", [
+    { stopReason: "toolUse", tool: { name: "read", arguments: { path: file } } },
+    { stopReason: "stop", text: "private-report-sentinel" },
+  ]);
+  const progress: { note: string; details?: SubagentProgress }[] = [];
+  const result = await runSubagent({ definition: { ...definition, tools: ["read"] }, task: "private-task-sentinel",
+    cwd: root.cwd, agentDir: root.agentDir, mode: "full", planning: false, modelRuntime: runtime, model,
+    settingsManager: SettingsManager.inMemory(), onProgress: (note, details) => { progress.push({ note, details }); } });
+  assert.equal(result.toolCalls, 1);
+  assert.equal(result.report, "private-report-sentinel");
+  assert.equal(progress[0].note, "Starting");
+  assert.ok(progress.some(item => item.note === "Using read" && item.details?.toolCalls === 1));
+  assert.ok(progress.some(item => item.note === "Thinking" && item.details?.toolCalls === 1));
+  assert.doesNotMatch(JSON.stringify(progress), /private-(?:path|result|report|task)-sentinel/);
+});
+
+test("bundled agents run with their own instructions and tool limits while inheriting the parent model", async (t) => {
+  const root = paths(t); profile(t, root);
+  const store = new AgentStore(root);
+  const { runtime, seen, model } = await fixtureRuntime(t);
+  for (const name of ["scout", "lens"]) {
+    const agent = store.find(name)!;
+    for (const restrictions of [{ mode: "full" as const, planning: false },
+      { mode: "read-only" as const, planning: false }, { mode: "full" as const, planning: true }]) {
+      const before = seen.length;
+      const result = await runSubagent({ definition: agent, task: "Inspect the requested code and report findings.",
+        cwd: root.cwd, agentDir: root.agentDir, modelRuntime: runtime, model,
+        settingsManager: SettingsManager.inMemory(), ...restrictions });
+      assert.equal(result.aborted, false);
+      assert.equal(result.model, model.id);
+      assert.equal(result.report, "Findings: the module is unused.");
+      const expected = restrictions.planning || restrictions.mode === "read-only"
+        ? ["read", "find", "grep", "ls"] : agent.tools!;
+      assert.deepEqual(declaredTools(seen[before]).sort(), [...expected].sort());
+      const system = JSON.stringify(seen[before].messages.find((message) => message.role === "system"));
+      assert.match(system, new RegExp(`You are ${name}`));
+      assert.doesNotMatch(system, new RegExp(`You are ${name === "scout" ? "lens" : "scout"}`));
+    }
+  }
+  assert.equal(existsSync(join(root.agentDir, "agents")), false);
+  assert.equal(existsSync(join(root.agentDir, "sessions")), false);
+});
+
+test("editing a bundled agent saves a user override and leaves the bundled instructions intact", async (t) => {
+  const root = paths(t), store = new AgentStore(root), existing = store.find("scout")!;
+  const ctx = { cwd: root.cwd, ui: { async custom(create: PanelFactory) {
+    const tui = { children: [], terminal: { rows: 24, columns: 80 }, requestRender() {} };
+    const panel = create(tui, createUiTheme(), {}, () => {});
+    try { await panel.ready; panel.render(80); panel.handleInput("\x13"); } finally { panel.dispose(); }
+  } } } as unknown as ExtensionCommandContext;
+  const saved = await openAgentEditor({ pi: { getThinkingLevel: () => "off" } as ExtensionAPI, ctx, existing, measure });
+  assert.ok(saved);
+  assert.equal(saved.scope, "global");
+  assert.deepEqual(saved.draft.tools, existing.tools);
+  assert.equal(saved.draft.prompt, existing.prompt);
+  assert.equal(store.find("scout")!.scope, "builtin");
+  store.save(saved.scope, saved.draft);
+  assert.equal(store.find("scout")!.scope, "global");
+  store.delete("global", "scout");
+  assert.deepEqual(store.find("scout"), existing);
 });
 
 test("saving and editing a no-tools agent never restores the engine defaults", async (t) => {

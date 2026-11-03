@@ -1,10 +1,10 @@
 import { getAgentDir, SettingsManager, VERSION } from "@earendil-works/pi-coding-agent";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { AgentStore, agentsPrompt } from "../lib/agents.js";
 import type { AgentCatalog, AgentDefinition } from "../lib/agents.js";
 import { runSubagent } from "../lib/subagent.js";
-import type { ApprovalDecision } from "../lib/subagent.js";
+import type { ApprovalDecision, SubagentRequest } from "../lib/subagent.js";
 import { serializeApproval } from "../lib/approval-queue.js";
 import { readPermissionMode, permissionRequest, PERMISSIONS_CHANGED } from "../lib/permissions.js";
 import { PLAN_ENTRY, PLAN_CHANGED, isPlanning } from "../lib/plan.js";
@@ -12,6 +12,8 @@ import type { Plan } from "../lib/plan.js";
 import { boundedText } from "../lib/project-state.js";
 import { errorMessage } from "../lib/errors.js";
 import type { WorkspacePage } from "../ui/workspace-screen.js";
+import { beginSubagentStatus } from "../lib/subagent-status.js";
+import { subagentReportMessage } from "../lib/subagent-report.js";
 
 const taskSchema = { type: "object", properties: {
   agent: { type: "string", description: "Name of the subagent to run." },
@@ -96,7 +98,7 @@ export default function agents(pi: ExtensionAPI, runner = runSubagent) {
     }, "deny");
 
   const run = async (definition: AgentDefinition, task: string, ctx: ExtensionContext, signal?: AbortSignal,
-    onProgress?: (note: string) => void) => {
+    onProgress?: SubagentRequest["onProgress"]) => {
     // A grant is scoped to the policy under which it was given. Revoke the
     // whole run on a policy change, including queued approvals and tool work.
     const policy = new AbortController();
@@ -106,16 +108,33 @@ export default function agents(pi: ExtensionAPI, runner = runSubagent) {
     const stopPermissions = pi.events.on(PERMISSIONS_CHANGED, revoke);
     const stopPlan = pi.events.on(PLAN_CHANGED, revoke);
     const runSignal = AbortSignal.any([lifetime.signal, policy.signal, ...(signal ? [signal] : [])]);
+    let status: ReturnType<typeof beginSubagentStatus> | undefined;
+    let finished = false;
+    const stopStatus = () => status?.dispose();
+    runSignal.addEventListener("abort", stopStatus, { once: true });
     try {
-      return await runner({
+      if (runSignal.aborted) return { report: "", toolCalls: 0, blocked: [], aborted: true };
+      if (ctx.mode === "tui" && ctx.hasUI) status = beginSubagentStatus(definition.name);
+      if (runSignal.aborted) return { report: "", toolCalls: 0, blocked: [], aborted: true };
+      const result = await runner({
         definition, task, cwd: ctx.cwd, agentDir: getAgentDir(),
         mode: readPermissionMode(ctx.sessionManager.getEntries()),
         planning: planning(ctx),
         model: ctx.model, thinkingLevel: pi.getThinkingLevel(),
         settingsManager: SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted() }),
-        signal: runSignal, onProgress, requestApproval: approver(ctx, definition.name, runSignal),
+        signal: runSignal, onProgress: (note, progress) => {
+          if (finished || runSignal.aborted) return;
+          status?.update(note, progress);
+          onProgress?.(note, progress);
+        }, requestApproval: approver(ctx, definition.name, runSignal),
       });
-    } finally { stopPermissions(); stopPlan(); runs.delete(policy); settled(); }
+      return runSignal.aborted ? { ...result, report: "", aborted: true } : result;
+    } finally {
+      finished = true;
+      runSignal.removeEventListener("abort", stopStatus);
+      try { status?.dispose(); }
+      finally { stopPermissions(); stopPlan(); runs.delete(policy); settled(); }
+    }
   };
 
   pi.registerTool({
@@ -153,9 +172,59 @@ export default function agents(pi: ExtensionAPI, runner = runSubagent) {
       `${agent.name} · ${agent.scope}`, agent.description, "",
       `Tools: ${agent.tools ? (agent.tools.join(", ") || "none") : "engine default"}`,
       `Model: ${agent.model ?? "inherits the current model"}`,
-      `File: ${agent.filePath}`, "", ...agent.prompt.split("\n"),
+      agent.scope === "builtin" ? "Bundled default. Edit to save a global or project override." : `File: ${agent.filePath}`,
+      "", ...agent.prompt.split("\n"),
     ] }))];
   };
+
+  const runManual = async (definition: AgentDefinition, task: string, ctx: ExtensionCommandContext) => {
+    const sessionLifetime = lifetime;
+    const sessionId = ctx.sessionManager.getSessionId();
+    const text = boundedText(task, "Task", 12_000);
+    if (!text) throw new Error("Describe the task after the agent name.");
+    if (ctx.mode !== "tui") notify(ctx, `Running ${definition.name}. Press Esc to cancel, or use /agents stop.`);
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, ...(ctx.signal ? [ctx.signal] : [])]);
+    let stopInput = ctx.mode === "tui" ? ctx.ui.onTerminalInput((data) => {
+      if (!matchesKey(data, "escape") && !matchesKey(data, "ctrl+c")) return;
+      controller.abort(); return { consume: true };
+    }) : undefined;
+    try {
+      const result = await run(definition, text, ctx, signal);
+      if (sessionLifetime.signal.aborted || ctx.sessionManager.getSessionId() !== sessionId) return;
+      if (result.aborted || signal.aborted) {
+        notify(ctx, `Subagent ${definition.name} was cancelled.`);
+        return;
+      }
+      // Hand input ownership back before starting the parent's normal reply.
+      stopInput?.(); stopInput = undefined;
+      const wasIdle = ctx.isIdle();
+      pi.sendMessage(subagentReportMessage(definition, text, result), { triggerTurn: true, deliverAs: "followUp" });
+      // One-shot print/JSON callers must not dispose the session before the
+      // parent's reply finishes. A busy parent owns its queued follow-up.
+      if (wasIdle) await ctx.waitForIdle();
+    } finally { stopInput?.(); }
+  };
+
+  for (const shortcut of [
+    { name: "scout", description: "Research the codebase in a separate context: /scout TASK", defaultTask: "" },
+    { name: "lens", description: "Review current changes or a specified scope in a separate context: /lens [TASK]",
+      defaultTask: "Review the current working-tree changes, including staged, unstaged, and untracked files. Report actionable findings with file and line references." },
+  ]) {
+    pi.registerCommand(shortcut.name, {
+      description: shortcut.description,
+      handler: async (args, ctx) => {
+        const sessionLifetime = lifetime;
+        try {
+          const task = args.trim() || shortcut.defaultTask;
+          if (!task) { notify(ctx, `Use /${shortcut.name} TASK. Describe what to investigate.`); return; }
+          const definition = refresh(ctx).find(shortcut.name);
+          if (!definition) throw new Error(`Subagent ${shortcut.name} is unavailable.`);
+          await runManual(definition, task, ctx);
+        } catch (error) { if (!sessionLifetime.signal.aborted) notify(ctx, errorMessage(error), true); }
+      },
+    });
+  }
 
   pi.registerCommand("agents", {
     description: "Browse, create, and run subagents that work in their own context",
@@ -174,35 +243,31 @@ export default function agents(pi: ExtensionAPI, runner = runSubagent) {
           return;
         }
         const agentStore = refresh(ctx);
+        const remove = async (definition: AgentDefinition) => {
+          if (definition.scope === "builtin") {
+            notify(ctx, `The built-in ${definition.name} agent cannot be deleted. Edit it to save a global or project override.`);
+            return;
+          }
+          if (!ctx.hasUI || await ctx.ui.confirm("Delete agent?", `${definition.name} (${definition.scope})`)) {
+            agentStore.delete(definition.scope, definition.name);
+            refresh(ctx);
+            const fallback = agentStore.find(definition.name);
+            notify(ctx, `Deleted ${definition.name} (${definition.scope}).${fallback ? ` The ${fallback.scope} definition is now active.` : ""}`);
+          }
+        };
         const match = args.trim().match(/^(run|new|list|delete)(?:\s+([\s\S]*))?$/);
         const action = match?.[1], rest = (match?.[2] ?? "").trim();
         if (action === "run") {
           const [name, ...task] = rest.split(/\s+/);
           const definition = name ? agentStore.find(name) : undefined;
           if (!definition) throw new Error(`Use /agents run NAME TASK. Available: ${catalog.agents.map((a) => a.name).join(", ") || "none configured"}.`);
-          const text = boundedText(task.join(" "), "Task", 12_000);
-          if (!text) throw new Error("Describe the task after the agent name.");
-          notify(ctx, `Running ${definition.name}. Press Esc to cancel, or use /agents stop.`);
-          const controller = new AbortController();
-          const signal = AbortSignal.any([controller.signal, ...(ctx.signal ? [ctx.signal] : [])]);
-          const stopInput = ctx.mode === "tui" ? ctx.ui.onTerminalInput((data) => {
-            if (!matchesKey(data, "escape") && !matchesKey(data, "ctrl+c")) return;
-            controller.abort(); return { consume: true };
-          }) : undefined;
-          try {
-            const result = await run(definition, text, ctx, signal);
-            if (!sessionLifetime.signal.aborted) notify(ctx, result.aborted ? `Subagent ${definition.name} was cancelled.`
-              : `${definition.name} (${result.toolCalls} tool call(s)):\n\n${result.report || "No report."}`);
-          } finally { stopInput?.(); }
+          await runManual(definition, task.join(" "), ctx);
           return;
         }
         if (action === "delete") {
           const definition = rest ? agentStore.find(rest) : undefined;
           if (!definition) throw new Error("Use /agents delete NAME.");
-          if (!ctx.hasUI || await ctx.ui.confirm("Delete agent?", `${definition.name} (${definition.scope})`)) {
-            agentStore.delete(definition.scope, definition.name);
-            refresh(ctx); notify(ctx, `Deleted ${definition.name}.`);
-          }
+          await remove(definition);
           return;
         }
         if (action === "list" || ctx.mode !== "tui") {
@@ -226,10 +291,7 @@ export default function agents(pi: ExtensionAPI, runner = runSubagent) {
           const definition = catalog.agents[selected.page - 1];
           if (selected.action === "new") await edit();
           else if (selected.action === "edit" && definition) await edit(definition);
-          else if (selected.action === "delete" && definition
-            && await ctx.ui.confirm("Delete agent?", `${definition.name} (${definition.scope})`)) {
-            agentStore.delete(definition.scope, definition.name); refresh(ctx);
-          }
+          else if (selected.action === "delete" && definition) await remove(definition);
         }
       } catch (error) { if (!sessionLifetime.signal.aborted) notify(ctx, errorMessage(error), true); }
     },

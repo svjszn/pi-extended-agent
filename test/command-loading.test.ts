@@ -49,7 +49,7 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
       const loaded = loader.getExtensions(); assert.deepEqual(loaded.errors, []);
       assert.equal(loaded.extensions.length, JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions.length);
       const commands = new Map(loaded.extensions.flatMap(extension => [...extension.commands].map(([name, command]) => [name, commandFixture(command)] as const)));
-      for (const name of ["agents", "usage", "stats", "status", "context", "config", "skills", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
+      for (const name of ["agents", "scout", "lens", "usage", "stats", "status", "context", "config", "skills", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
         assert.ok(commands.has(name), `Missing /${name} before opening any screen`);
       }
       assert.equal(commands.has("perf"), false);

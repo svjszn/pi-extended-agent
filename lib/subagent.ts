@@ -8,6 +8,7 @@ import { cleanText } from "./project-state.js";
 import { errorMessage } from "./errors.js";
 
 export type ApprovalDecision = "once" | "run" | "deny";
+export interface SubagentProgress { toolCalls: number }
 export interface SubagentRequest {
   definition: AgentDefinition;
   task: string;
@@ -25,7 +26,8 @@ export interface SubagentRequest {
   signal?: AbortSignal;
   /** Opens the parent's approval screen; the subagent has no UI of its own. */
   requestApproval?(toolName: string, input: unknown): Promise<ApprovalDecision>;
-  onProgress?(note: string): void;
+  /** Activity metadata only; never include reasoning, tool arguments, or results. */
+  onProgress?(note: string, progress?: SubagentProgress): void;
   maxToolCalls?: number;
 }
 export interface SubagentResult {
@@ -61,7 +63,7 @@ export function readReport(messages: readonly { role?: unknown; content?: unknow
  * plan barrier run here, so a nested call can never exceed what the parent allows.
  */
 export interface GuardState { toolCalls: number; blocked: string[] }
-export function createSubagentGuard(request: SubagentRequest, state: GuardState): InlineExtension {
+export function createSubagentGuard(request: SubagentRequest, state: GuardState, onAllowed?: () => void): InlineExtension {
   const budget = request.maxToolCalls ?? MAX_TOOL_CALLS;
   let runGranted = false;
   return {
@@ -69,7 +71,7 @@ export function createSubagentGuard(request: SubagentRequest, state: GuardState)
     hidden: true,
     factory: (pi: ExtensionAPI) => {
       pi.on("before_agent_start", (event) => {
-        const text = `You are the ${request.definition.name} subagent. Report back in your final message: the parent conversation sees only that text, not this transcript. You cannot ask the user questions.`;
+        const text = `You are the ${request.definition.name} subagent. Report back in your final message: the parent conversation sees only that text, not this transcript. Write a self-contained handoff covering the requested scope, every actionable finding with supporting file/line references, checks actually performed, limitations, and unresolved questions. Keep the handoff within ${MAX_REPORT} characters and prioritize the evidence needed by the parent. Do not leave important conclusions only in tool output or earlier progress messages. You cannot ask the user questions.`;
         if (event.systemPromptOptions?.forceSystemPrompt !== undefined || !event.systemPromptOptions) {
           return { systemPrompt: `${event.systemPrompt}\n\n${text}` };
         }
@@ -98,6 +100,10 @@ export function createSubagentGuard(request: SubagentRequest, state: GuardState)
           if (approval === "run") runGranted = true;
         }
         state.toolCalls++;
+        // Pi announces execution before the guard runs; refresh the accepted
+        // count only after all permission and planning checks have passed.
+        onAllowed?.();
+        if (request.signal?.aborted) return block("The subagent run was cancelled.");
         return undefined;
       });
     },
@@ -109,7 +115,18 @@ export async function runSubagent(request: SubagentRequest): Promise<SubagentRes
   const { definition } = request;
   const state: GuardState = { toolCalls: 0, blocked: [] };
   let session: AgentSession | undefined;
+  let unsubscribe: (() => void) | undefined;
+  const activeTools = new Map<string, string>();
+  const currentActivity = () => activeTools.size ? `Using ${[...activeTools.values()].at(-1)}` : "Thinking";
+  let lastNote = "", lastCalls = -1;
+  const publish = (note: string) => {
+    if (request.signal?.aborted || (note === lastNote && state.toolCalls === lastCalls)) return;
+    lastNote = note; lastCalls = state.toolCalls;
+    request.onProgress?.(note, { toolCalls: state.toolCalls });
+  };
   try {
+    request.signal?.throwIfAborted();
+    publish("Starting");
     request.signal?.throwIfAborted();
     const services = await createAgentSessionServices({
       cwd: request.cwd,
@@ -126,7 +143,7 @@ export async function runSubagent(request: SubagentRequest): Promise<SubagentRes
         noSkills: true,
         // Keep Pi's own baseline and add the agent's instructions to it.
         appendSystemPrompt: [definition.prompt],
-        extensionFactories: [createSubagentGuard(request, state)],
+        extensionFactories: [createSubagentGuard(request, state, () => publish(currentActivity()))],
       },
     });
     request.signal?.throwIfAborted();
@@ -153,11 +170,25 @@ export async function runSubagent(request: SubagentRequest): Promise<SubagentRes
       ...(tools ? { tools } : {}),
     });
     session = created.session;
+    unsubscribe = session.subscribe((event) => {
+      if (event.type === "tool_execution_start") {
+        activeTools.set(event.toolCallId, cleanText(event.toolName).replace(/\s+/g, " ").slice(0, 64));
+        publish(currentActivity());
+      } else if (event.type === "tool_execution_end") {
+        activeTools.delete(event.toolCallId); publish(currentActivity());
+      } else if (event.type === "message_start" && event.message.role === "assistant") publish(currentActivity());
+      else if (event.type === "message_update" && event.message.role === "assistant") {
+        const type = event.assistantMessageEvent.type;
+        if (type === "text_delta") publish(activeTools.size ? currentActivity() : "Preparing report");
+        else if (type === "thinking_delta" || type === "toolcall_delta") publish(currentActivity());
+      } else if (event.type === "auto_retry_start") publish("Retrying");
+      else if (event.type === "compaction_start") publish("Compacting");
+    });
     const abort = () => { void session?.abort(); };
     request.signal?.addEventListener("abort", abort, { once: true });
     try {
       request.signal?.throwIfAborted();
-      request.onProgress?.(`Running ${definition.name}…`);
+      publish("Thinking");
       request.signal?.throwIfAborted();
       await session.prompt(request.task, { expandPromptTemplates: false, source: "extension" });
       await session.waitForIdle();
@@ -183,6 +214,7 @@ export async function runSubagent(request: SubagentRequest): Promise<SubagentRes
     }
     throw new Error(`Subagent ${definition.name} failed: ${errorMessage(error)}`);
   } finally {
+    unsubscribe?.();
     session?.dispose();
   }
 }

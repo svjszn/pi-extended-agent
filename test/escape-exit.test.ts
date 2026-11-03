@@ -11,6 +11,10 @@ import test from "node:test";
 const { createEscapeExitEditor } = await import(new URL("../dist/ui/escape-exit.js", import.meta.url).href) as typeof import("../ui/escape-exit.js");
 const { setAvailableUpdates, setUpdateNoticeVisible } = await import(new URL("../dist/lib/update-status.js", import.meta.url).href) as typeof import("../lib/update-status.js");
 const { getAppearance, setAppearance } = await import(new URL("../dist/lib/appearance.js", import.meta.url).href) as typeof import("../lib/appearance.js");
+const { beginSubagentStatus } = await import(new URL("../dist/lib/subagent-status.js", import.meta.url).href) as typeof import("../lib/subagent-status.js");
+
+const testEditors = new Set<{ dispose(): void }>();
+test.afterEach(() => { for (const editor of testEditors) editor.dispose(); testEditors.clear(); });
 
 const piEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const require = createRequire(piEntry);
@@ -26,6 +30,7 @@ function editorState(showEffort = false, now = Date.now, getRunProgress?: () => 
   }, showEffort ? { getLevel: () => state.effort } : undefined, () => { state.modeSwitches++; }, now);
   const theme = { borderColor: (text: string) => text, selectList: {} };
   const editor = new Editor((tui as unknown as ConstructorParameters<typeof Editor>[0]), theme as EditorTheme, new KeybindingsManager(), { embedWorkingStatus: true });
+  testEditors.add(editor);
   editor.onCtrlD = () => { state.exits++; };
   editor.onEscape = () => { state.cancels++; };
   return { editor, state, tui };
@@ -208,6 +213,52 @@ test("Working shows run time and output tokens without moving effort, updates, o
   assert.match(stripTerminalSequences(editor.render(100)[0]), /1h 0m 2s/);
   assert.equal(editor.getText(), "Keep this draft");
   assert.equal(state.effort, "medium");
+});
+
+test("subagents occupy exactly the normal Working row and preserve input, effort, updates, and native status", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  let time = 0, renders = 0;
+  const { editor, state, tui } = editorState(true, () => time);
+  editor.focused = true; editor.setText("Keep this draft");
+  tui.requestRender = () => { renders++; };
+  const height = editor.render(100).length;
+  const status = beginSubagentStatus("lens", () => time);
+  t.after(() => { status.dispose(); setAvailableUpdates([]); });
+  status.update("Using read", { toolCalls: 3 }); time = 18_000;
+  const lines = editor.render(100).map(stripTerminalSequences);
+  assert.equal(lines.length, height, "subagent activity must not add a widget, gap, or editor row");
+  assert.match(lines[0], /^  . Working · lens · Using read · 18s · 3 calls/);
+  assert.ok(lines[0].endsWith("medium  "));
+  assert.equal(lines[1], "─".repeat(100));
+  assert.match(lines[2], /^❯ Keep this draft/);
+  for (const width of [1, 2, 8, 16, 24, 40, 80]) assert.ok(editor.render(width).every(line => visibleWidth(line) <= width));
+  const before = renders; time += 80; t.mock.timers.tick(80);
+  assert.ok(renders > before, "the shared editor animation must advance manual subagent activity");
+  editor.setWorkingStatusIndicator({ renderInBorder: () => "Compacting", renderSpinnerInBorder: () => "" } as unknown as Parameters<typeof editor.setWorkingStatusIndicator>[0]);
+  assert.match(stripTerminalSequences(editor.render(100)[0]), /^  Compacting · lens/);
+  editor.setWorkingStatusIndicator(undefined);
+  setAvailableUpdates([{ kind: "engine", version: "1.5.0", current: "1.4.0", command: "pi update --engine", message: "Fixture" }]);
+  setUpdateNoticeVisible(true);
+  assert.match(stripTerminalSequences(editor.render(120)[0]), /Working · lens.*Pi update 1\.5\.0 · pi update --engine/);
+  status.dispose();
+  const stopped = renders; t.mock.timers.tick(800);
+  assert.equal(renders, stopped, "manual settlement immediately stops the shared animation");
+  setAvailableUpdates([]);
+  assert.equal(stripTerminalSequences(editor.render(100)[0]).trim(), "medium");
+  assert.equal(editor.getText(), "Keep this draft");
+  assert.equal(state.effort, "medium");
+});
+
+test("a disposed editor releases subagent listeners and Escape cannot exit while a child runs", (t) => {
+  const { editor, state, tui } = editorState(true);
+  let renders = 0; tui.requestRender = () => { renders++; };
+  const status = beginSubagentStatus("scout"); t.after(() => status.dispose());
+  editor.handleInput("\x1b");
+  assert.equal(state.exits, 0);
+  editor.dispose();
+  const stopped = renders;
+  status.update("Using grep", { toolCalls: 1 }); status.dispose();
+  assert.equal(renders, stopped);
 });
 
 test("run clock repaints once a second only while active and stops on settlement, blur, and disposal", (t) => {

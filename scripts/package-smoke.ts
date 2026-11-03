@@ -19,6 +19,10 @@ await verifyRuntime(bundledRuntime(), installed);
 const cwd = join(temp, "project"), agentDir = present(process.env.PI_CODING_AGENT_DIR);
 mkdirSync(agentDir, { recursive: true });
 const agentStore = new AgentStore({ cwd, agentDir, projectTrusted: false });
+assert.deepEqual(agentStore.list().agents.map((agent) => [agent.name, agent.scope]), [["lens", "builtin"], ["scout", "builtin"]]);
+assert.equal(existsSync(join(agentDir, "agents")), false, "Bundled agents should not create profile definitions.");
+assert.deepEqual(agentStore.find("scout")?.tools, ["read", "find", "grep", "ls"]);
+assert.deepEqual(agentStore.find("lens")?.tools, ["read", "find", "grep", "ls", "bash"]);
 agentStore.save("global", { name: "release-agent", description: "Isolated release fixture", tools: [], prompt: "Return a single report." });
 assert.deepEqual(agentStore.find("release-agent")?.tools, []);
 const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false,
@@ -36,7 +40,7 @@ const { session } = await createAgentSession({ cwd, agentDir, modelRuntime, sett
 let resumed;
 try {
   await session.bindExtensions({ mode: "print" });
-  const required = ["agents", "config", "model", "effort", "permissions", "memory", "plan", "mode", "prompt", "theme", "color"];
+  const required = ["agents", "scout", "lens", "config", "model", "effort", "permissions", "memory", "plan", "mode", "prompt", "theme", "color"];
   const commands = session.extensionRunner.getRegisteredCommands().map((command) => command.name);
   for (const name of required.filter((name) => name !== "model")) assert.ok(commands.includes(name), `Missing /${name}`);
   assert.equal(commands.includes("perf"), false, "Installed package registered a development command");
@@ -53,6 +57,7 @@ try {
   for (const extension of cliLoader.getExtensions().extensions) assert.equal(extension.commands.has("perf"), false);
   assert.equal(cliLoader.getExtensions().extensions.length, JSON.parse(readFileSync(join(installed, "package.json"), "utf8")).pi.extensions.length);
   assert.ok(cliLoader.getExtensions().extensions.some(extension => extension.commands.has("agents") && extension.tools.has("task")));
+  assert.ok(cliLoader.getExtensions().extensions.some(extension => extension.commands.has("scout") && extension.commands.has("lens")));
   assert.ok(cliLoader.getExtensions().extensions.some(extension => extension.tools.has("ask_user")));
   session.agent.state.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "release-smoke", name: "codemode", arguments: {} }],
     api: "test", provider: "test", model: "test", stopReason: "toolUse", timestamp: Date.now(),
@@ -89,6 +94,9 @@ try {
   assert.match(prompt.systemPromptOptions.sections.pi_extended_plan, /Check release/);
   assert.match(prompt.systemPromptOptions.sections.pi_extended_prompt, /Keep answers short/);
   assert.match(prompt.systemPromptOptions.sections.pi_extended_agents, /release-agent: Isolated release fixture/);
+  assert.match(prompt.systemPromptOptions.sections.pi_extended_agents, /scout:/);
+  assert.match(prompt.systemPromptOptions.sections.pi_extended_agents, /lens:/);
+  assert.ok(!prompt.systemPromptOptions.sections.pi_extended_agents.includes(agentStore.find("scout")!.prompt));
   assert.equal(settingsManager.getCompactionSettings().enabled, true);
   const sessionFile = present(manager.getSessionFile()); assert.ok(existsSync(sessionFile));
   session.dispose();
@@ -102,6 +110,8 @@ try {
   assert.match(restored.systemPromptOptions.sections.pi_extended_prompt, /Keep answers short/);
   assert.match(restored.systemPromptOptions.sections.pi_extended_memory, /release-test/);
   assert.match(restored.systemPromptOptions.sections.pi_extended_agents, /release-agent: Isolated release fixture/);
+  assert.match(restored.systemPromptOptions.sections.pi_extended_agents, /scout:/);
+  assert.match(restored.systemPromptOptions.sections.pi_extended_agents, /lens:/);
   await resumed.prompt("/agents delete release-agent");
   assert.equal(agentStore.find("release-agent"), undefined);
   await resumed.prompt("/plan cancel");

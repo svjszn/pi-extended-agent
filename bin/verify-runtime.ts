@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createFooter, createHeader } from "../ui/chrome.js";
 import { createEscapeExitEditor } from "../ui/escape-exit.js";
+import { beginSubagentStatus } from "../lib/subagent-status.js";
 import { createCommandPanel } from "../ui/command-panel.js";
 import { createAuthSelectorScreen } from "../ui/auth-screen.js";
 import { captureFlashes } from "./flash-interface.js";
@@ -192,6 +193,20 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     assert.equal(inputLines[0].trim(), "medium", "Runtime hides effort above input");
     assert.equal(inputLines[1], "─".repeat(width), "Runtime breaks full-width input border");
     assert.ok(inputLines[2].startsWith("❯ "), "Runtime hides the input chevron or breaks text alignment");
+    const activity = beginSubagentStatus("lens");
+    try {
+      activity.update("Using read", { toolCalls: 2 });
+      const activeLines = input.render(width).map(stripTerminalSequences);
+      assert.equal(activeLines.length, inputLines.length, "Runtime adds a separate subagent status row");
+      assert.ok(activeLines[0].includes("Working"), "Runtime hides subagent activity above input");
+      assert.equal(activeLines[1], inputLines[1], "Runtime shifts the input during subagent work");
+      if (width >= 80) {
+        assert.ok(activeLines[0].includes("lens"), "Runtime hides the active subagent name");
+        assert.ok(activeLines[0].includes("2 calls"), "Runtime hides subagent tool-call counts");
+        assert.ok(activeLines[0].includes("medium"), "Runtime hides effort during subagent work");
+      }
+    } finally { activity.dispose(); }
+    assert.equal(stripTerminalSequences(input.render(width)[0]).trim(), "medium", "Runtime leaves stale subagent activity");
     // Copy-on-select confirmations must still reach a flash the corner can take over.
     assert.equal(typeof (tuiApi as unknown as { TuiAltScreen?: { prototype?: { flash?: unknown } } })
       .TuiAltScreen?.prototype?.flash, "function", "Pi's alternate screen no longer flashes copy confirmations");
@@ -270,9 +285,11 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   if (existsSync(join(runtime.packageDir, "dist", "extensions", "mcp", "config.js"))) {
     assert.equal(status.mcpConfigKnown, true, "Runtime breaks MCP configuration metadata");
   }
-  const commands = new Set<string>();
+  const commands = new Set<string>(), registeredTools = new Set<string>();
   const fakePi: Pick<ExtensionAPI, "on" | "registerCommand" | "registerTool"> = {
-    on() { return () => {}; }, registerCommand(name) { commands.add(name); }, registerTool(tool) { assert.ok(tool.parameters, `Missing schema for ${tool.name}`); },
+    on() { return () => {}; }, registerCommand(name) { commands.add(name); }, registerTool(tool) {
+      assert.ok(tool.parameters, `Missing schema for ${tool.name}`); registeredTools.add(tool.name);
+    },
   };
   const extensionFiles: unknown = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).pi?.extensions;
   assert.ok(Array.isArray(extensionFiles) && extensionFiles.length > 0, "Missing production extension allowlist");
@@ -282,7 +299,8 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     await factory(fakePi as ExtensionAPI);
   }
   assert.ok(!commands.has("perf"), "Development performance command must not ship");
-  for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "mode", "theme", "color", "agents", "clear"]) {
+  for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "mode", "theme", "color", "agents", "scout", "lens", "clear"]) {
     assert.ok(commands.has(name), `Runtime failed to register /${name}`);
   }
+  for (const name of ["task", "ask_user"]) assert.ok(registeredTools.has(name), `Runtime failed to register ${name}`);
 }
