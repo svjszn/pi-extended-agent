@@ -74,6 +74,9 @@ pi --resume
 pi --model PROVIDER/MODEL_ID
 pi --tui-mode regular
 pi --help
+pi ui
+pi ui --port 3210
+pi ui --no-open
 pi doctor
 pi doctor --json
 pi update
@@ -85,6 +88,14 @@ pi update --rollback
 
 `pi-extended-agent` is an alias for the same executable. Update options are
 described in [Updates](/guide/updates).
+
+### Browser dashboard
+
+`pi ui [--port 0..65535] [--no-open]` launches a local browser interface for
+saved chats and live conversations. It is part of the upcoming 2.0.0 release.
+The default port is assigned automatically, and the server stays in the
+foreground until Ctrl+C. See [Browser dashboard](/guide/web-ui) for setup,
+authentication, session behavior, and supported actions.
 
 ### Diagnostics
 

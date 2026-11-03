@@ -23,9 +23,21 @@ export default function askUser(pi: ExtensionAPI) {
       const questions = parseUserQuestions(params);
       const runSignal = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : []), ...(ctx.signal ? [ctx.signal] : [])]);
       if (runSignal.aborted) return result(cancelled());
-      if (!ctx.hasUI || ctx.mode !== "tui") return result(unavailable());
+      const web = ctx.mode === "rpc" && process.env.PI_EXTENDED_WEB_UI === "1";
+      if (!ctx.hasUI || ctx.mode !== "tui" && !web) return result(unavailable());
       const answer = await serializeApproval<AskUserResult>(async () => {
         if (runSignal.aborted) return cancelled();
+        if (web) {
+          const { WEB_QUESTIONS_PREFIX, webQuestionAnswers } = await import("../lib/web-questions.js");
+          if (runSignal.aborted) return cancelled();
+          let abort: () => void = () => {};
+          const cancelledResponse = new Promise<undefined>(resolve => { abort = () => resolve(undefined); runSignal.addEventListener("abort", abort, { once: true }); });
+          try {
+            const response = await Promise.race([ctx.ui.editor("Questions from Pi", WEB_QUESTIONS_PREFIX + JSON.stringify(questions)), cancelledResponse]);
+            if (response === undefined || runSignal.aborted) return cancelled();
+            return { status: "answered", answers: webQuestionAnswers(questions, response) };
+          } finally { runSignal.removeEventListener("abort", abort); }
+        }
         const [{ createAskUserScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
           import("../ui/ask-user-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
         ]);

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `pi ui` with a local browser dashboard for searchable chat history, new/resumed conversations, streamed replies, tool activity, model/effort/permission controls, native confirmations, and structured `ask_user` answers. Preserve Pi's RPC agent loop, session format, trust and planning guards; inherit active restrictions before starting new browser chats. Bind to loopback, authenticate local API access, reject cross-origin requests, and keep provider configuration out of browser responses. Include responsive dark/light layouts and browser documentation.
+
 - Keep the `/nano` text cursor visible when Pi hides the hardware cursor, including empty lines and the end of a file.
 
 - Add `/diff [--staged] [path]` to browse working-tree, staged, and untracked Git changes with file navigation, colored patches, refresh, and horizontal scrolling. Add `/nano [path]` with a lazy directory tree, split and narrow-terminal layouts, a text editor, undo/redo, and explicit atomic saves. Preserve UTF-8 formatting, guard unsaved buffers, and reject conflicting disk changes and redirected paths. Both commands operate locally without model calls or changes to agent permissions.

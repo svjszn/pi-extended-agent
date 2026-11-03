@@ -10,6 +10,11 @@ let args = process.argv.slice(2);
 // owns its Pi dependency and handles updates through its own entry point.
 process.env.PI_SKIP_VERSION_CHECK = "1";
 process.env.PI_EXTENDED_AGENT_VERSION = AGENT_VERSION;
+if (args[0] === "ui") {
+  const { runUi } = await import("./ui.js");
+  await runUi(args.slice(1));
+  process.exit(process.exitCode ?? 0);
+}
 if (args[0] === "doctor") {
   if (args.length > 2 || (args[1] && !["--json", "--help", "-h"].includes(args[1]))) {
     console.error("Use pi doctor [--json]."); process.exit(2);

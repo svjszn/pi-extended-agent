@@ -69,6 +69,45 @@ pi
 The package also provides `pi-extended-agent` as an alternative command. Both launch the same agent.
 `pi --version` shows both the agent and active engine versions.
 
+### Browser dashboard
+
+The upcoming 2.0.0 release also includes a local browser interface:
+
+```sh
+pi ui
+pi ui --port 3210
+pi ui --no-open
+```
+
+Run it from your project. The command opens your browser and keeps the local
+server running until **Ctrl+C**. It chooses a free port by default; `--port`
+selects one and `--no-open` prints the address without launching a browser.
+
+Browse saved chats from the active Pi profile, search by title, preview or
+project, and continue a conversation in its original working directory. Start
+a new chat in the current directory or enter another project path. Messages
+stream as Pi works, with reasoning and tool details available to expand. You
+can choose an available model, a supported effort level, and `allow`/`ask`/`deny`,
+or stop the current reply. New browser chats inherit the active chat's model,
+effort, permission restrictions and work mode; unrelated fresh starts use Pi's
+normal defaults. The interface supports dark/light themes and narrow screens.
+
+The dashboard uses Pi's native RPC mode and saves ordinary Pi sessions, so you
+can resume the same conversation in the terminal. Tool confirmations and
+`ask_user` questions appear in the browser and require explicit answers. Plan
+execution still needs `/plan execute`; answering a question grants no tool
+permissions. Login and TUI-specific screens such as `/nano` and `/diff` remain
+in the terminal. Connect your provider with `/login` in Pi before starting a
+browser conversation. One chat can run at a time per dashboard server; do not
+write to the same chat from the terminal and browser concurrently.
+
+The server listens only on `127.0.0.1`. Use the complete printed address to open
+an authorized tab; its fragment contains a temporary access token. Session
+listing is read-only and works without loading the engine. Closing all
+dashboard tabs cancels a pending run after a 10-second reconnect grace period;
+stopping the server closes its Pi subprocess. Unsent drafts live only in the
+browser tab. No frontend dependencies or cloud hosting are required.
+
 ### From source
 
 ```sh

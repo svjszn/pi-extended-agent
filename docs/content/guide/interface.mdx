@@ -40,8 +40,10 @@ without sending partial answers.
 Questions work in auto, code, and plan modes, including Deny permissions.
 Answering a question does not grant tool permissions or approve a plan; plan
 execution still requires `/plan execute`. Questions share the dialog queue with
-permission requests. Print/RPC mode reports the screen as unavailable and collects
-no answer. Subagents do not receive this tool.
+permission requests. The [browser dashboard](/guide/web-ui) collects the same
+structured answers through its RPC connection. Ordinary print/RPC clients
+report the screen as unavailable and collect no answer. Subagents do not
+receive this tool.
 
 ## Resume a Chat
 

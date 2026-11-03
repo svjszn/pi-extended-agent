@@ -177,6 +177,25 @@ test("the question tool returns structured answers, reports unavailable UI, and 
   assert.equal((await host(create => show(create)).call()).status, "answered");
 });
 
+test("web questions return validated answers through RPC and cancel on abort without widening ordinary RPC", async t => {
+  const previous = process.env.PI_EXTENDED_WEB_UI;
+  t.after(() => { if (previous === undefined) delete process.env.PI_EXTENDED_WEB_UI; else process.env.PI_EXTENDED_WEB_UI = previous; });
+  const view = host(); view.ctx.mode = "rpc";
+  delete process.env.PI_EXTENDED_WEB_UI;
+  assert.equal((await view.call()).status, "unavailable");
+  process.env.PI_EXTENDED_WEB_UI = "1";
+  view.ctx.ui.editor = async (_title, prefill) => {
+    assert.match(prefill ?? "", /^PI_WEB_QUESTIONS\n/);
+    return JSON.stringify([{ id: "storage", selected: ["profile"], text: "Use the active profile" }]);
+  };
+  const answer = await view.call(); assert.equal(answer.status, "answered"); assert.equal(answer.answers[0].selected[0].label, "Profile");
+  view.ctx.ui.editor = async () => JSON.stringify([{ id: "storage", selected: ["unknown"], text: "" }]);
+  assert.equal((await view.call()).status, "unavailable", "invalid browser answers must not be invented or accepted");
+  const controller = new AbortController();
+  view.ctx.ui.editor = () => new Promise(() => { controller.abort(); });
+  assert.deepEqual(await view.call(controller.signal), { status: "cancelled", answers: [] });
+});
+
 test("cancellation while queued never opens a stale question and releases the shared approval queue", async () => {
   let unlock!: () => void, started!: () => void, opens = 0;
   const ready = new Promise<void>(resolve => { started = resolve; });
