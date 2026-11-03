@@ -1,10 +1,11 @@
 import nextra from 'nextra';
+import type { NextConfig } from 'next';
 import { fileURLToPath } from 'node:url';
 
 const basePath = process.env.DOCS_BASE_PATH ?? '';
 const withNextra = nextra({ contentDirBasePath: '/' });
 
-export default withNextra({
+const config: NextConfig = {
   output: 'export',
   basePath,
   trailingSlash: true,
@@ -19,4 +20,6 @@ export default withNextra({
     });
     return config;
   },
-});
+};
+
+export default withNextra(config);

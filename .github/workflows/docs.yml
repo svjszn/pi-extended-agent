@@ -36,6 +36,7 @@ jobs:
           cache: npm
           cache-dependency-path: docs/package-lock.json
       - run: npm ci
+      - run: npm run check
       - run: npm run build
       - name: Upload static site
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

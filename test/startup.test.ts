@@ -7,7 +7,7 @@ const { verifyRuntime } = await import(new URL("../dist/bin/verify-runtime.js", 
 import { fileURLToPath, pathToFileURL } from "node:url";
 const { hasModel, startupAuthNotice } = await import(new URL("../dist/lib/startup.js", import.meta.url).href) as typeof import("../lib/startup.js");
 const { normalizeResumeArgs } = await import(new URL("../dist/bin/resume-args.js", import.meta.url).href) as typeof import("../bin/resume-args.js");
-import { captureCommand } from "../scripts/capture-command.mjs";
+import { captureCommand } from "../scripts/capture-command.ts";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { createRequire } from "node:module";

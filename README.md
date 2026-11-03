@@ -275,7 +275,7 @@ A subagent never gets more access than the session has granted. It runs the same
 
 | File | Responsibility |
 | :--- | :--- |
-| [`bin/pi.mjs`](bin/pi.mjs) | Stable npm entry point for installed and linked commands |
+| [`bin/pi.ts`](bin/pi.ts) | Source for the generated stable npm entry point `bin/pi.mjs` |
 | [`bin/main.ts`](bin/main.ts) | Own the commands and launch the active Pi engine |
 | [`bin/runtime.ts`](bin/runtime.ts) | Resolve bundled and managed engine versions |
 | [`bin/update.ts`](bin/update.ts) | Install, activate, and roll back engines |
@@ -292,6 +292,8 @@ Source code uses TypeScript with `strict` enabled. Plain `npm ci` builds it thro
 After editing source files, run `npm run build` before restarting a directly linked `pi`. `npm run pi`, `npm start`, and `npm test` build automatically. For continuous compilation in another terminal, use `npm run build -- --watch`. Tests exercise the compiled JavaScript that ships to users. `npm pack` builds before creating an archive.
 
 All test suites and the installed-package smoke check are written in TypeScript and checked by `npm run check` through `tsconfig.test.json`. Node 22.19+ runs them with built-in type stripping; their runtime imports still exercise `dist/` while source type imports validate the contracts.
+
+Build and release scripts also run directly as TypeScript and are checked through `tsconfig.scripts.json`. The build generates the stable npm executable `bin/pi.mjs` from `bin/pi.ts`; the generated launcher is ignored by Git and included in the npm artifact.
 
 The startup resource listing is hidden; skills and extensions still load normally. UI integration relies on some Pi component structure, so engine updates are checked before activation.
 

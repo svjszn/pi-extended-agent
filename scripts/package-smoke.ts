@@ -1,5 +1,5 @@
 import { present } from "../test/helpers.ts";
-// Run only against the npm artifact installed by release-check.mjs, never the checkout's modules.
+// Run only against the npm artifact installed by release-check.ts, never the checkout's modules.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

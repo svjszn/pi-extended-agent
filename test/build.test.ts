@@ -1,12 +1,12 @@
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, outputFiles } from "../scripts/build.mjs";
-import { assertPackageFiles, assertProductionOutput, productionExtensions } from "../scripts/artifact-policy.mjs";
-import { captureCommand } from "../scripts/capture-command.mjs";
+import { build, outputFiles } from "../scripts/build.ts";
+import { assertPackageFiles, assertProductionOutput, productionExtensions } from "../scripts/artifact-policy.ts";
+import { captureCommand } from "../scripts/capture-command.ts";
 import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
@@ -23,7 +23,8 @@ function fixture(t: TestContext) {
   }, include: ["bin/**/*.ts", "extensions/**/*.ts", "lib/**/*.ts"] }));
   write("extensions/current.ts", "export default function current() {}\n");
   write("bin/main.ts", "export const current = true;\n");
-  const run: import("../scripts/build.mjs").BuildRunner = (executable, args, options) => captureCommand(executable, args, { ...options, encoding: "utf8" });
+  write("bin/pi.ts", "#!/usr/bin/env node\nconst entry: URL = new URL('../dist/bin/main.js', import.meta.url);\nawait import(entry.href);\n");
+  const run: import("../scripts/build.ts").BuildRunner = (executable, args, options) => captureCommand(executable, args, { ...options, encoding: "utf8" });
   return { root, write, compile: (options = {}) => build({ root, run, ...options }) };
 }
 
@@ -40,6 +41,29 @@ test("clean builds remove deleted source output and retired diagnostics, includi
   }
   assert.ok(existsSync(join(f.root, "dist/extensions/current.js")));
   assertProductionOutput(outputFiles(f.root), manifest);
+});
+
+test("the TypeScript launcher builds at the stable npm path and runs without type stripping", (t) => {
+  const f = fixture(t); f.compile();
+  const launcher = readFileSync(join(f.root, "bin/pi.mjs"), "utf8");
+  assert.ok(launcher.startsWith("#!/usr/bin/env node\n"));
+  assert.equal(launcher.includes(": URL"), false);
+  const result = captureCommand(process.execPath, ["--no-experimental-strip-types", join(f.root, "bin/pi.mjs")], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("command capture preserves buffer and text output, including failed commands", () => {
+  const args = ["-e", "process.stdout.write('captured'); process.stderr.write('failure'); process.exitCode = 3;"];
+  const raw = captureCommand(process.execPath, args);
+  assert.equal(raw.status, 3);
+  assert.ok(Buffer.isBuffer(raw.stdout));
+  assert.ok(Buffer.isBuffer(raw.stderr));
+  assert.equal(raw.stdout.toString(), "captured");
+  assert.equal(raw.stderr.toString(), "failure");
+  const text = captureCommand(process.execPath, args, { encoding: "utf8" });
+  assert.equal(text.status, 3);
+  assert.equal(text.stdout, "captured");
+  assert.equal(text.stderr, "failure");
 });
 
 test("a failed compiler cannot leave a previous runnable build", (t) => {
@@ -73,6 +97,16 @@ test("build cleanup refuses redirected output directories", (t) => {
   catch (error) { if (["EPERM", "EACCES", "ENOSYS"].includes((error as NodeJS.ErrnoException).code ?? "")) { t.skip("Symlink creation is unavailable"); return; } throw error; }
   assert.throws(() => f.compile(), /Refusing redirected/);
   assert.equal(readFileSync(join(outside.root, "keep.txt"), "utf8"), "must survive");
+});
+
+test("launcher generation refuses a redirected bin directory", (t) => {
+  const f = fixture(t), outside = fixture(t);
+  outside.write("pi.mjs", "must survive");
+  renameSync(join(f.root, "bin"), join(f.root, "saved-bin"));
+  try { symlinkSync(outside.root, join(f.root, "bin"), process.platform === "win32" ? "junction" : "dir"); }
+  catch (error) { if (["EPERM", "EACCES", "ENOSYS"].includes((error as NodeJS.ErrnoException).code ?? "")) { t.skip("Symlink creation is unavailable"); return; } throw error; }
+  assert.throws(() => f.compile(), /Refusing redirected build output: bin/);
+  assert.equal(readFileSync(join(outside.root, "pi.mjs"), "utf8"), "must survive");
 });
 
 test("artifact policy requires an explicit extension list and rejects stale or development files", () => {

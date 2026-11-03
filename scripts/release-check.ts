@@ -1,23 +1,31 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import type { SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { captureCommand } from "./capture-command.mjs";
-import { assertPackageFiles } from "./artifact-policy.mjs";
+import { captureCommand } from "./capture-command.ts";
+import { assertPackageFiles } from "./artifact-policy.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.env.npm_execpath;
 if (!npm || !existsSync(npm)) throw new Error("Run this check with npm run release:check.");
-function run(executable, args, { cwd = root, env = process.env, capture = false, accepted = [0], timeout = 300_000 } = {}) {
+interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; capture?: boolean; accepted?: number[]; timeout?: number }
+function run(executable: string, args: string[], options: RunOptions & { capture: true }): SpawnSyncReturns<string>;
+function run(executable: string, args: string[], options?: RunOptions): SpawnSyncReturns<string | Buffer>;
+function run(executable: string, args: string[], { cwd = root, env = process.env, capture = false, accepted = [0], timeout = 300_000 }: RunOptions = {}): SpawnSyncReturns<string | Buffer> {
   const result = capture
     ? captureCommand(executable, args, { cwd, env, encoding: "utf8", timeout, windowsHide: true })
     : spawnSync(executable, args, { cwd, env, timeout, stdio: "inherit", windowsHide: true });
   if (result.error) throw result.error;
-  if (!accepted.includes(result.status)) throw new Error(`${executable} exited with ${result.status}. ${result.stderr ?? ""}`);
+  if (result.status === null || !accepted.includes(result.status)) throw new Error(`${executable} exited with ${result.status}. ${result.stderr ?? ""}`);
   return result;
 }
-const npmRun = (args, options) => run(process.execPath, [npm, ...args], options);
+function npmRun(args: string[], options: RunOptions & { capture: true }): SpawnSyncReturns<string>;
+function npmRun(args: string[], options?: RunOptions): SpawnSyncReturns<string | Buffer>;
+function npmRun(args: string[], options?: RunOptions): SpawnSyncReturns<string | Buffer> {
+  return run(process.execPath, [npm!, ...args], options);
+}
 
 console.log("Checking types and tests...");
 npmRun(["run", "check"]);
@@ -29,7 +37,7 @@ assert.equal(manifest.version, lock.version); assert.equal(manifest.version, loc
 assert.equal(manifest.license, lock.packages[""].license, "Package license metadata differs from the lockfile.");
 const releases = join(root, ".local", "releases"); mkdirSync(releases, { recursive: true });
 const [packed] = JSON.parse(npmRun(["pack", "--ignore-scripts", "--json", "--pack-destination", releases], { capture: true }).stdout);
-const files = packed.files.map((file) => file.path);
+const files = packed.files.map((file: { path: string }) => file.path);
 assertPackageFiles(files, manifest);
 const archive = join(releases, packed.filename);
 const temp = mkdtempSync(join(root, ".local", "release-check-"));
@@ -46,8 +54,8 @@ try {
   const env = { ...process.env, PI_CODING_AGENT_DIR: join(temp, "profile"), PI_EXTENDED_RUNTIME_DIR: join(temp, "runtime"), PI_OFFLINE: "1" };
   const shim = process.platform === "win32" ? join(prefix, "pi.cmd") : join(prefix, "bin", "pi");
   assert.ok(existsSync(shim), "npm did not create the global pi command.");
-  const quotePowerShell = (value) => `'${value.replace(/'/g, "''")}'`;
-  const launch = (args) => process.platform === "win32"
+  const quotePowerShell = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const launch = (args: string[]) => process.platform === "win32"
     ? run(join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"),
       ["-NoProfile", "-NonInteractive", "-Command", `& ${[shim, ...args].map(quotePowerShell).join(" ")}\nexit $LASTEXITCODE`], { cwd: project, env, capture: true })
     : run(shim, args, { cwd: project, env, capture: true });

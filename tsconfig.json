@@ -24,5 +24,6 @@
     "skipLibCheck": true,
     "sourceMap": true
   },
-  "include": ["bin/**/*.ts", "extensions/**/*.ts", "lib/**/*.ts", "ui/**/*.ts"]
+  "include": ["bin/**/*.ts", "extensions/**/*.ts", "lib/**/*.ts", "ui/**/*.ts"],
+  "exclude": ["bin/pi.ts"]
 }

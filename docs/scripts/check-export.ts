@@ -4,8 +4,8 @@ import { isAbsolute, join, resolve, relative, sep } from 'node:path';
 
 const root = resolve('out');
 const basePath = process.env.DOCS_BASE_PATH ?? '';
-const html = [];
-function walk(directory) {
+const html: string[] = [];
+function walk(directory: string): void {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const file = join(directory, entry.name);
     if (entry.isDirectory()) walk(file);

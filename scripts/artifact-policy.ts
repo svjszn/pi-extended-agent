@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 
 /** Production extensions must be individually reviewed; no directory/glob discovery. */
-export function productionExtensions(manifest) {
-  const entries = manifest.pi?.extensions;
+export function productionExtensions(manifest: unknown): string[] {
+  const entries = (manifest as { pi?: { extensions?: unknown } } | null)?.pi?.extensions;
   assert.ok(Array.isArray(entries) && entries.length > 0, "Declare the production extension allowlist.");
   assert.ok(entries.every((entry) => typeof entry === "string" && /^\.\/dist\/extensions\/[a-z0-9-]+\.js$/.test(entry)),
     "Production extensions must be explicit ./dist/extensions/NAME.js files.");
@@ -11,7 +11,7 @@ export function productionExtensions(manifest) {
   return files;
 }
 
-export function assertProductionOutput(files, manifest) {
+export function assertProductionOutput(files: string[], manifest: unknown): void {
   const extensions = productionExtensions(manifest);
   for (const file of extensions) assert.ok(files.includes(file), `Missing production extension: ${file}`);
   const allowed = new Set(extensions.flatMap((file) => [file, `${file}.map`]));
@@ -21,7 +21,7 @@ export function assertProductionOutput(files, manifest) {
   }
 }
 
-export function assertPackageFiles(files, manifest) {
+export function assertPackageFiles(files: string[], manifest: unknown): void {
   assertProductionOutput(files, manifest);
   for (const required of ["bin/pi.mjs", "dist/bin/main.js", "dist/bin/verify-runtime.js", "README.md", "CHANGELOG.md", "LICENSE"]) {
     assert.ok(files.includes(required), `Missing package file: ${required}`);

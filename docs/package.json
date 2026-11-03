@@ -5,11 +5,12 @@
   "type": "module",
   "engines": { "node": ">=22.19.0" },
   "scripts": {
-    "predev": "node scripts/prepare-search.mjs",
+    "predev": "node scripts/prepare-search.ts",
     "dev": "next dev --webpack",
+    "check": "tsc -p tsconfig.tools.json",
     "build": "next build --webpack",
-    "postbuild": "pagefind --site out --output-path out/_pagefind && node scripts/sync-search.mjs && node scripts/check-export.mjs",
-    "preview": "node scripts/preview.mjs"
+    "postbuild": "pagefind --site out --output-path out/_pagefind && node scripts/sync-search.ts && node scripts/check-export.ts",
+    "preview": "node scripts/preview.ts"
   },
   "dependencies": {
     "next": "16.4.2",
@@ -18,7 +19,11 @@
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
-  "devDependencies": { "pagefind": "1.5.2" },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "pagefind": "1.5.2",
+    "typescript": "6.0.3"
+  },
   "overrides": {
     "@xmldom/xmldom": "0.9.12",
     "katex": "0.18.2"

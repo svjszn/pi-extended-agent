@@ -6,7 +6,7 @@ request; avoid adding features, dependencies, or refactors to unrelated areas.
 
 ## Repository map
 
-- `bin/pi.mjs` is the stable npm executable; `bin/*.ts` implements the launcher,
+- `bin/pi.ts` generates the stable npm executable `bin/pi.mjs`; `bin/*.ts` implements the launcher,
   runtime selection, updates, and adapters to Pi's native interface.
 - `extensions/` registers slash commands, hooks, and tools through Pi's extension API.
 - `lib/` contains storage, provider readers, and other non-UI logic.
@@ -14,7 +14,7 @@ request; avoid adding features, dependencies, or refactors to unrelated areas.
 - `test/` contains TypeScript suites that test the compiled JavaScript, including real Pi SDK integration.
 - `dev/` contains opt-in diagnostics, built into `.local/dev-dist/`, never shipped.
 - `docs/` is an independent Nextra site. Its dependencies must stay out of the CLI.
-- `scripts/release-check.mjs` validates the installed npm artifact in an isolated prefix.
+- `scripts/release-check.ts` validates the installed npm artifact in an isolated prefix.
 
 ## Development
 
@@ -22,18 +22,18 @@ Use Node.js 22.19.0 or newer. Install with `npm ci`; if lifecycle scripts are
 disabled, run `npm run build` afterward. Edit TypeScript sources, never `dist/`
 or `node_modules/`. Build before restarting a linked `pi`.
 
-- `npm run check` checks strict TypeScript types in production, diagnostics, all test suites, and the installed-package smoke check.
+- `npm run check` checks strict TypeScript types in production, diagnostics, scripts, all test suites, and the installed-package smoke check.
 - `npm run build` clears `dist/`, compiles production code, and checks its extension allowlist.
 - `npm run build:dev` separately builds development diagnostics into `.local/dev-dist/`.
 - `npm test` builds both targets and runs the complete suite.
 - For a focused check after building:
-  `node scripts/run-tests.mjs test/workspace.test.ts`.
+  `node scripts/run-tests.ts test/workspace.test.ts`.
 - TypeScript tests run through Node's built-in type stripping on Node 22.19+.
   Keep test syntax erasable. Import compiled runtime modules and use source type
   imports to validate their contracts; tests must keep exercising the built code.
 - `npm run release:check` checks types, tests, packing, isolated installation,
   commands, permissions, memory, planning, compaction, and session resume.
-- For documentation, run `npm ci` and `npm run build` from `docs/`.
+- For documentation, run `npm ci`, `npm run check`, and `npm run build` from `docs/`.
 
 Run checks relevant to the change. Add regression coverage for data loss,
 permissions, lifecycle behavior, and compatibility bugs. Report environment

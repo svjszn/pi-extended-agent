@@ -9,7 +9,7 @@ import { registerHooks } from "node:module";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { captureCommand } from "../scripts/capture-command.mjs";
+import { captureCommand } from "../scripts/capture-command.ts";
 
 // A fresh process is essential: other tests deliberately import these views.
 // Observe the actual CLI-bundle loader, not a hand-built Jiti configuration.

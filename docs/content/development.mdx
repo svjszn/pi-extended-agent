@@ -20,6 +20,11 @@ and checks for contributors and coding agents. TypeScript source compiles to
 `dist/`, which is ignored by Git and included in the npm artifact. Edit source
 files rather than generated JavaScript or upstream packages.
 
+Build and release scripts run directly as TypeScript and are checked through
+`tsconfig.scripts.json`. The build generates `bin/pi.mjs` from `bin/pi.ts` to
+preserve the stable npm executable path. The generated launcher is ignored by
+Git and included in the npm artifact.
+
 All test suites and `scripts/package-smoke.ts` use TypeScript. `npm run check` validates
 them with `tsconfig.test.json`, and Node 22.19+ runs them using built-in type
 stripping. Their runtime imports still point to the compiled `dist/` modules;
@@ -27,7 +32,7 @@ source type imports provide the checked contracts. After building, run the
 focused tests with:
 
 ```sh
-node scripts/run-tests.mjs test/agents.test.ts test/agents-extension.test.ts test/session-interface.test.ts
+node scripts/run-tests.ts test/agents.test.ts test/agents-extension.test.ts test/session-interface.test.ts
 ```
 
 The project uses Pi's extension API and a small set of isolated private
@@ -66,8 +71,12 @@ npm run dev
 Production builds export static HTML and generate a Pagefind search index:
 
 ```sh
+npm run check
 npm run build
 ```
+
+`npm run check` validates the TypeScript tooling and `next.config.mts` using
+`tsconfig.tools.json`, independently of the CLI checks.
 
 The build also copies the search index to `public/_pagefind/` for the development
 server. `npm run dev` prepares an index on first use. Rebuild to include newly
