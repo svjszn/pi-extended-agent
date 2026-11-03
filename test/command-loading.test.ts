@@ -86,9 +86,11 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
       };
       if (failApproval) {
         ctx.mode = "tui";
-        await present(commands.get("permissions")).handler("ask", ctx);
         const extension = loaded.extensions.find(extension => extension.commands.has("permissions"));
         const call = (name: string) => present(present(extension).handlers.get("tool_call"))[0]({ toolName: name, input: { path: "sample.txt" } }, ctx);
+        assert.equal((await call("read") as {block:boolean}).block, true, "Tools must stay blocked before policy initialization");
+        for (const start of present(present(extension).handlers.get("session_start"))) await start({ type: "session_start", reason: "startup" }, ctx);
+        await present(commands.get("permissions")).handler("ask", ctx);
         assert.equal((await call("write") as {block:boolean}).block, true);
         assert.equal(await call("read"), undefined);
         assert.equal(views, 0);

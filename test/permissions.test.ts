@@ -35,7 +35,7 @@ function fixture(entries: {type: string; customType: string; data: unknown}[] = 
     ui: { notify: (message: string, type?: string) => notices.push({ message, type }), custom: undefined as CustomUi | undefined, confirm: (async () => false) as ExtensionUIContext["confirm"] } };
   handlers.get("session_start")({}, ctx);
   const set = async (mode: string) => { ctx.hasUI = true; await command.handler(mode, ctx as unknown as ExtensionCommandContext); };
-  return { pi, ctx, handlers, command, stored, notices, bus, set, call: (name: string) => handlers.get("tool_call")(event(name), ctx) };
+  return { pi, ctx, handlers, command, stored, notices, bus, set, call: (name: string, input: unknown = { path: "sample.txt" }) => handlers.get("tool_call")({ ...event(name), input }, ctx) };
 }
 
 test("permissions allow only known built-in readers, never shell strings or unverified read-only hints", () => {
@@ -64,6 +64,20 @@ test("mode changes persist only session metadata, restore on resume, and reject 
   assert.equal(f.stored.length, 1);
   assert.equal(readPermissionMode([]), "full");
   assert.equal(fixture().stored.length, 0);
+});
+
+test("a failed policy read blocks tools until permissions initialize successfully", async () => {
+  const f = fixture();
+  const read = f.ctx.sessionManager.getEntries;
+  f.ctx.sessionManager.getEntries = () => { throw new Error("Fixture policy read failed"); };
+  assert.throws(() => f.handlers.get("session_start")({}, f.ctx), /Fixture policy read failed/);
+  for (const name of ["read", "write", "bash"]) {
+    const result = await f.call(name); assert.equal(result.block, true);
+    assert.match(result.reason, /permissions.*initialized/i);
+  }
+  f.ctx.sessionManager.getEntries = read;
+  f.handlers.get("session_start")({}, f.ctx);
+  assert.equal(await f.call("write"), undefined);
 });
 
 test("ask mode gates mutations, fails closed without UI, and does not reuse one approval", async () => {
@@ -162,22 +176,70 @@ test("approval screen defaults to denial, scrolls full input, and requires an ex
   }
 });
 
-test("approval text bounds a large tool input, keeps its fields visible, and states every truncation", () => {
+test("approval pages retain complete input, including long values, later fields and Unicode", () => {
   const long = "a".repeat(5_000);
-  const text = permissionRequest("write", { path: "src/app.ts", content: long, nested: { note: long } }, "/work").join("\n");
-  assert.match(text, /Tool: write/);
-  assert.match(text, /Working directory: \/work/);
-  assert.match(text, /"path": "src\/app\.ts"/);
-  assert.match(text, /"nested": \{/);
-  assert.ok(!text.includes("a".repeat(601)), "long values must be shortened");
-  assert.match(text, /… \(5000 characters in total\)/);
-  assert.ok(text.length < 4_300, `approval text stayed ${text.length} characters`);
-  // Many medium fields hit the overall cap instead of the per-value one.
-  const bulk = permissionRequest("write", Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`field${i}`, "b".repeat(500)])), "/work").join("\n");
-  assert.ok(bulk.length < 4_300, `bulk approval text stayed ${bulk.length} characters`);
-  assert.match(bulk, /… input truncated for display$/);
-  // A small input is still shown exactly as the tool receives it.
-  assert.match(permissionRequest("bash", { command: "ls -la" }, "/work").join("\n"), /"command": "ls -la"/);
+  const input = { path: "src/app.ts", content: long, nested: { note: long }, unicode: "😀".repeat(5_000), tail: "FINAL_FIELD" };
+  const request = permissionRequest("write", input, "/work");
+  assert.equal(request.error, undefined);
+  assert.deepEqual(request.header, ["Tool: write", "Working directory: /work"]);
+  assert.ok(request.pages.length > 1);
+  assert.ok(request.pages.every(page => page.length <= 4_000 && !/[\uD800-\uDBFF]$/.test(page)));
+  assert.deepEqual(JSON.parse(request.pages.join("")), input);
+  const bulk = { ...Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`field${i}`, "b".repeat(500)])), tail: "FINAL_FIELD" };
+  assert.deepEqual(JSON.parse(permissionRequest("write", bulk, "/work").pages.join("")), bulk);
+  assert.deepEqual(JSON.parse(permissionRequest("bash", { command: "ls -la" }, "/work").pages.join("")), { command: "ls -la" });
+});
+
+test("unreviewable inputs are denied before opening any approval UI", async () => {
+  const cyclic: { self?: unknown } = {}; cyclic.self = cyclic;
+  for (const mode of ["print", "tui"]) for (const input of [{ content: "x".repeat(300_000) }, { content: "\n".repeat(150_000) }, cyclic]) {
+    const f = fixture(); await f.set("ask"); f.ctx.mode = mode;
+    f.ctx.ui.confirm = async () => assert.fail("Unreviewable input cannot be approved");
+    f.ctx.ui.custom = async () => assert.fail("Unreviewable input cannot be approved");
+    assert.equal((await f.call("write", input)).block, true);
+    assert.match(present(f.notices.at(-1)).message, /Cannot review the complete tool input/);
+    assert.equal(permissionRequest("write", input, "/work").pages.length, 0);
+  }
+});
+
+test("RPC approvals receive complete input rather than a shortened command", async () => {
+  const f = fixture(); await f.set("ask");
+  const command = "echo safe " + "x".repeat(9_000) + "; echo REVIEW_TAIL";
+  f.ctx.ui.confirm = async (_title, text) => {
+    assert.match(text, /REVIEW_TAIL/);
+    assert.equal(JSON.parse(text.slice(text.indexOf("{"))).command, command);
+    return true;
+  };
+  assert.equal(await f.call("bash", { command }), undefined);
+});
+
+test("the actual approval dialog exposes command tails across bounded pages and preserves explicit consent", async () => {
+  for (const allow of [false, true]) {
+    const f = fixture(); await f.set("ask"); f.ctx.mode = "tui";
+    const command = "echo safe " + "x".repeat(9_000) + "; echo REVIEW_TAIL";
+    f.ctx.ui.custom = async create => {
+      let result;
+      const tui = { children: [], terminal: { rows: 24 }, requestRender() {} };
+      const panel = create(tui, createUiTheme(), {}, value => { result = value; });
+      try {
+        await panel.ready;
+        const text = () => measure.stripTerminalSequences(panel.render(80).join("\n"));
+        assert.match(text(), /page 1\/3/);
+        panel.handleInput("\x1b[6~"); assert.match(text(), /page 2\/3/);
+        panel.handleInput("\x1b[5~"); assert.match(text(), /page 1\/3/);
+        panel.handleInput("\x1b[F"); assert.match(text(), /REVIEW_TAIL/);
+        for (const [width, rows] of [[80, 24], [24, 12], [8, 8], [1, 4]]) {
+          tui.terminal.rows = rows;
+          const lines = panel.render(width);
+          assert.equal(lines.length, rows); assert.ok(lines.every(line => measure.visibleWidth(line) <= width));
+        }
+        if (allow) panel.handleInput("\x1b[C");
+        panel.handleInput("\r"); return result;
+      } finally { panel.dispose(); }
+    };
+    const result = await f.call("powershell", { command });
+    assert.equal(!result?.block, allow);
+  }
 });
 
 test("footer reflects the permission mode and keeps context aligned", () => {

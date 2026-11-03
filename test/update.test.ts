@@ -9,8 +9,9 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 const { captureCommand, planUpdate, updateEngine, latestVersion } = await import(new URL("../dist/bin/update.js", import.meta.url).href) as typeof import("../bin/update.js");
-const { PI_PACKAGE, readRuntimeState, cachedVersions, selectedRuntime, describeRuntime, bundledRuntime } = await import(new URL("../dist/bin/runtime.js", import.meta.url).href) as typeof import("../bin/runtime.js");
+const { PI_PACKAGE, readRuntimeState, writeRuntimeState, cachedVersions, selectedRuntime, describeRuntime, bundledRuntime } = await import(new URL("../dist/bin/runtime.js", import.meta.url).href) as typeof import("../bin/runtime.js");
 const { checkForEngineUpdate, checkForAgentUpdate, checkForUpdates, checkForReleaseUpdates, UPDATE_CHECK_INTERVAL } = await import(new URL("../dist/lib/update-notice.js", import.meta.url).href) as typeof import("../lib/update-notice.js");
 const { installAgent, updateAgent } = await import(new URL("../dist/bin/self-update.js", import.meta.url).href) as typeof import("../bin/self-update.js");
 const { default: updateNotice } = await import(new URL("../dist/extensions/update-notice.js", import.meta.url).href) as typeof import("../extensions/update-notice.js");
@@ -181,6 +182,53 @@ test("offline updates reuse complete cached engines and rollback restores the bu
   assert.equal(readRuntimeState(directory).version, nextEngineVersion);
   await updateEngine(root, { rollback: true }, services);
   assert.deepEqual(readRuntimeState(directory), { version: null, previous: nextEngineVersion });
+});
+
+test("rollback verifies its target without reading a damaged active engine and preserves state on failure", async t => {
+  for (const file of ["package.json", "index.js", "cli.js"]) for (const cached of [false, true]) for (const reject of [false, true]) {
+    await t.test(`${file} ${cached ? "cached" : "bundled"} ${reject ? "reject" : "restore"}`, async t => {
+      const directory = fixture(t), previous = cached ? bundledRuntime().version : null;
+      stage(directory, nextEngineVersion);
+      if (previous) stage(directory, previous);
+      const damaged = resolve(directory, "releases", nextEngineVersion, "node_modules", PI_PACKAGE, file);
+      assert.ok(damaged.startsWith(resolve(directory) + sep)); rmSync(damaged);
+      writeRuntimeState(directory, { version: nextEngineVersion, previous });
+      const original = readFileSync(join(directory, "active.json"));
+      let verified = 0;
+      const pending = updateEngine(root, { rollback: true }, { directory, log() {},
+        install: async () => assert.fail("Rollback must not install or fetch a release"),
+        latest: async () => assert.fail("Rollback must not look up a release"),
+        verify: async runtime => {
+          verified++; assert.equal(runtime.version, bundledRuntime().version);
+          if (reject) throw new Error("Fixture verification failed");
+        },
+      });
+      if (reject) {
+        await assert.rejects(pending, /Fixture verification failed.*active engine was not changed/);
+        assert.deepEqual(readFileSync(join(directory, "active.json")), original);
+      } else {
+        await pending;
+        assert.deepEqual(readRuntimeState(directory), { version: previous, previous: nextEngineVersion });
+        assert.equal(selectedRuntime(directory).version, bundledRuntime().version);
+      }
+      assert.equal(verified, 1); assert.equal(existsSync(join(directory, "update.lock")), false);
+    });
+  }
+});
+
+test("the real CLI can roll back a missing active engine and start again without a model or user profile", t => {
+  const directory = fixture(t);
+  writeRuntimeState(directory, { version: nextEngineVersion, previous: null });
+  const env = { ...process.env, PI_EXTENDED_RUNTIME_DIR: directory, PI_CODING_AGENT_DIR: join(directory, "profile"), PI_OFFLINE: "1" };
+  const launch = (...args: string[]) => spawnSync(process.execPath, [join(root, "bin/pi.mjs"), ...args],
+    { cwd: directory, env, encoding: "utf8", timeout: 20_000, windowsHide: true });
+  assert.notEqual(launch("--help").status, 0);
+  const restored = launch("update", "--engine", "--rollback");
+  assert.equal(restored.status, 0, restored.stderr);
+  assert.ok(restored.stdout.includes(`Restored Pi ${bundledRuntime().version}`));
+  assert.equal(readRuntimeState(directory).version, null);
+  const version = launch("--version"); assert.equal(version.status, 0, version.stderr);
+  assert.ok(version.stdout.includes(`Pi Coding Agent ${bundledRuntime().version}`));
 });
 
 test("update check does not install or activate anything", async (t) => {

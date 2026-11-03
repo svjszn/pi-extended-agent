@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.4.1
+
+- Preserve the selected permission mode across `/clear` and `/new`, before replacement extensions start. Keep tools blocked if the inherited policy cannot be saved, and retain the existing defaults for unrelated fresh sessions.
+- Show complete approval inputs in bounded pages for parent and subagent tools, including long command tails and later fields. Send complete input to RPC clients and deny requests that cannot be reviewed within the 256,000-character limit.
+- Allow engine rollback when the active managed engine is missing or incomplete. Verify the previous or bundled engine before changing the runtime pointer, and preserve the pointer when recovery fails.
+
 ## 1.4.0
 
 - Update the pinned bundled Pi Coding Agent to 1.5.0. Extend the candidate-engine compatibility probe to cover scout/lens commands, question and delegation tools, and subagent activity in the input status row.

@@ -5,8 +5,9 @@ description: Choose which agent actions can run and which need approval.
 
 # Permissions
 
-New sessions use **Full access**. To review changes and shell commands before
-they run, switch to Ask mode:
+Fresh sessions use **Full access**. `/clear` and `/new` preserve your current
+permission mode. To review changes and shell commands before they run, switch
+to Ask mode:
 
 ```text
 /permissions ask
@@ -23,15 +24,23 @@ Open `/permissions` without an argument to choose a mode interactively.
 | `read-only` | Use built-in file reading and search; block changes, shell commands, and external tools |
 
 The footer shows `auto mode`, `ask mode`, or `read only`. Your choice is
-saved with the session and restored when you resume it.
+saved with the session and restored when you resume or reload it. Clearing the
+conversation preserves that choice before extensions start. If the inherited
+policy cannot be saved, tools stay blocked.
 
 Memory reads and plan updates are available in all modes. Memory saves and
 deletes require approval in Ask mode and are blocked in Read only mode.
 
 ## Approve an Action
 
-The approval screen shows the tool, working directory, and full input. Scroll
-to inspect a long command or change.
+The approval screen shows the tool, working directory, and complete input.
+Long inputs use bounded pages: **PgUp/PgDn** switches pages, **Home/End** jumps
+to the first/last page, and **Up/Down** scrolls within a page. The same review
+applies to subagent approvals. Changing pages resets the selection to Deny.
+
+Requests that cannot be displayed completely within 256,000 characters of JSON
+are denied. Ask the agent to split the action into smaller calls. RPC clients
+receive complete input within the same limit.
 
 The default choice is **Deny**. Use Left/Right to select **Allow once**, then
 Enter to confirm. Escape denies the action.

@@ -69,9 +69,11 @@ export default function agents(pi: ExtensionAPI, runner = runSubagent) {
   const approver = (ctx: ExtensionContext, agent: string, signal?: AbortSignal) =>
     async (toolName: string, input: unknown): Promise<ApprovalDecision> => serializeApproval(async () => {
       if (!ctx.hasUI || signal?.aborted) return "deny";
-      const lines = [`Subagent: ${agent}`, ...permissionRequest(toolName, input, ctx.cwd)];
+      const request = permissionRequest(toolName, input, ctx.cwd);
+      request.header.unshift(`Subagent: ${agent}`);
+      if (request.error) { ctx.ui.notify(request.error, "error"); return "deny"; }
       if (ctx.mode !== "tui") {
-        return await ctx.ui.confirm(`Allow ${toolName} for subagent ${agent}?`, lines.join("\n"), { signal }) ? "once" : "deny";
+        return await ctx.ui.confirm(`Allow ${toolName} for subagent ${agent}?`, [...request.header, "", request.pages.join("")].join("\n"), { signal }) ? "once" : "deny";
       }
       const [{ createPermissionApprovalScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
         import("../ui/permissions-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
@@ -85,7 +87,7 @@ export default function agents(pi: ExtensionAPI, runner = runSubagent) {
         });
         const footer = tui.children.at(-1);
         const abort = () => { panel.dispose(); done(false); };
-        const panel = createPermissionApprovalScreen({ tui, theme, measure: measure(), done, lines,
+        const panel = createPermissionApprovalScreen({ tui, theme, measure: measure(), done, request,
           runLabel: `Allow for this ${agent} run`,
           onChoice: (value) => { choice = value; },
           renderHeader: (width) => header.render(width), renderFooter: (width) => footer?.render(width),

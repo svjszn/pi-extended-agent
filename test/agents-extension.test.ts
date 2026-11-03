@@ -172,6 +172,25 @@ function fixture(t: TestContext, runner: typeof import("../lib/subagent.js").run
 
 const cancelled: SubagentResult = { report: "", toolCalls: 0, blocked: [], aborted: true };
 
+test("subagent approvals expose complete input to RPC and deny oversized calls without a grant", async t => {
+  const decisions: string[] = [], bodies: string[] = [];
+  const command = "echo safe " + "x".repeat(9_000) + "; echo SUBAGENT_REVIEW_TAIL";
+  const host = fixture(t, async request => {
+    assert.equal(request.mode, "ask");
+    decisions.push(await request.requestApproval!("bash", { command }));
+    decisions.push(await request.requestApproval!("bash", { command: "x".repeat(300_000) }));
+    return { ...cancelled, aborted: false, report: "Fixture findings" };
+  });
+  host.entries.push({ type: "custom", customType: PERMISSIONS_ENTRY, data: { mode: "ask" } });
+  host.ctx.ui.confirm = async (_title, text) => { bodies.push(text); return true; };
+  await host.task();
+  assert.deepEqual(decisions, ["once", "deny"]);
+  assert.equal(bodies.length, 1);
+  assert.match(bodies[0], /Subagent: researcher/);
+  assert.equal(JSON.parse(bodies[0].slice(bodies[0].indexOf("{"))).command, command);
+  assert.ok(host.notices.some(text => text.includes("Cannot review the complete tool input")));
+});
+
 test("concurrent agents share the Working slot without one run clearing or updating another's status", async (t) => {
   const started = new Map<string, () => void>(), finish = new Map<string, () => void>();
   const requests = new Map<string, SubagentRequest>();

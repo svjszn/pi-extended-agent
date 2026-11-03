@@ -5,12 +5,15 @@ import type { WorkMode } from "./code-mode.js";
 import { isPlanning, PLAN_ENTRY } from "./plan.js";
 import type { Plan } from "./plan.js";
 import { hasModel } from "./startup.js";
+import { readPermissionMode } from "./permissions.js";
+import type { PermissionMode } from "./permissions.js";
 
 export const SESSION_PREFERENCES_ENTRY = "pi-extended-session-preferences";
 export interface SessionPreferences {
   model?: { provider: string; id: string };
   effort: ReturnType<ExtensionAPI["getThinkingLevel"]>;
   mode: WorkMode;
+  permissions: PermissionMode;
 }
 
 export function sessionPreferences(ctx: ExtensionContext, pi: ExtensionAPI): SessionPreferences {
@@ -20,6 +23,7 @@ export function sessionPreferences(ctx: ExtensionContext, pi: ExtensionAPI): Ses
   return {
     model: hasModel(ctx.model) ? { provider: ctx.model!.provider, id: ctx.model!.id } : undefined,
     effort: pi.getThinkingLevel(), mode: planning ? "plan" : readCodeMode(entries).enabled ? "code" : "auto",
+    permissions: readPermissionMode(entries),
   };
 }
 

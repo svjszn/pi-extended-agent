@@ -35,17 +35,35 @@ export function permissionDecision(mode: PermissionMode, name: string, tools: re
 export function permissionFooter(mode: PermissionMode): string {
   return mode === "full" ? "auto mode" : mode === "ask" ? "ask mode" : "read only";
 }
-// A large tool input must stay readable and cheap to repaint on every frame.
-const MAX_REQUEST_VALUE = 600;
-const MAX_REQUEST_TEXT = 4_000;
-export function permissionRequest(name: string, input: unknown, cwd: string): string[] {
+// Review complete input in bounded pages. Never approve an undisplayable tail.
+const MAX_REQUEST_TEXT = 256_000;
+const REQUEST_PAGE_SIZE = 4_000;
+export interface PermissionRequest {
+  header: string[];
+  pages: string[];
+  error?: string;
+}
+export function permissionRequest(name: string, input: unknown, cwd: string): PermissionRequest {
   const clean = (value: string) => value.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
-  // Shorten long values individually, so the request keeps its structure and
-  // every field stays visible. Truncation is always stated, never silent.
-  const shorten = (_key: string, value: unknown) => typeof value === "string" && value.length > MAX_REQUEST_VALUE
-    ? `${value.slice(0, MAX_REQUEST_VALUE)}… (${value.length} characters in total)` : value;
-  let text = clean(JSON.stringify(input, shorten, 2) ?? "{}");
-  if (text.length > MAX_REQUEST_TEXT) text = `${text.slice(0, MAX_REQUEST_TEXT)}\n… input truncated for display`;
-  return [`Tool: ${clean(name)}`, `Working directory: ${clean(cwd)}`, "", ...text.split("\n")];
+  const header = [`Tool: ${clean(name)}`, `Working directory: ${clean(cwd)}`];
+  let remaining = MAX_REQUEST_TEXT;
+  try {
+    const text = JSON.stringify(input, (key, value: unknown) => {
+      remaining -= key.length + (typeof value === "string" ? value.length : 1);
+      if (remaining < 0) throw new Error("Input exceeds the review limit");
+      return value;
+    }, 2) ?? "{}";
+    if (text.length > MAX_REQUEST_TEXT) throw new Error("Encoded input exceeds the review limit");
+    const pages: string[] = [];
+    for (let start = 0; start < text.length;) {
+      let end = Math.min(start + REQUEST_PAGE_SIZE, text.length);
+      // Keep a Unicode surrogate pair on the same page.
+      if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+      pages.push(text.slice(start, end)); start = end;
+    }
+    return { header, pages };
+  } catch {
+    return { header, pages: [], error: `Cannot review the complete tool input (limit ${MAX_REQUEST_TEXT.toLocaleString("en-US")} characters). The action is denied; request a smaller, JSON-serializable tool call.` };
+  }
 }

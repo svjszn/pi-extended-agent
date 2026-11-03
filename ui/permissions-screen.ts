@@ -1,7 +1,7 @@
 import { createCommandPanel } from "./command-panel.js";
 import type { PanelOptions } from "./command-panel.js";
 import { PERMISSION_MODES, PERMISSION_LABELS, PERMISSION_DESCRIPTIONS } from "../lib/permissions.js";
-import type { PermissionMode } from "../lib/permissions.js";
+import type { PermissionMode, PermissionRequest } from "../lib/permissions.js";
 import type { KeyId } from "@earendil-works/pi-tui";
 
 type ScreenOptions = Pick<PanelOptions<boolean>, "tui" | "theme" | "measure" | "done" | "renderHeader" | "renderFooter" | "onDispose">;
@@ -40,25 +40,35 @@ export type ApprovalChoice = "deny" | "once" | "run";
  * only when a caller offers it, and it is never preselected: a grant that covers
  * more than one call must be picked deliberately.
  */
-export function createPermissionApprovalScreen({ lines, runLabel, onChoice, ...options }: ScreenOptions & {
-  lines: string[]; runLabel?: string; onChoice?(choice: ApprovalChoice): void;
+export function createPermissionApprovalScreen({ lines = [], request, runLabel, onChoice, ...options }: ScreenOptions & {
+  lines?: string[]; request?: PermissionRequest; runLabel?: string; onChoice?(choice: ApprovalChoice): void;
 }) {
   const choices: ApprovalChoice[] = runLabel ? ["deny", "once", "run"] : ["deny", "once"];
   const labels: Record<ApprovalChoice, string> = { deny: "Deny", once: "Allow once", run: runLabel ?? "Allow for this run" };
-  let selected = 0;
+  let selected = 0, page = 0;
+  const pageCount = request?.pages.length ?? 1;
   const { theme, measure, tui } = options;
   const close = (controls: { close(result?: boolean): void }, choice: ApprovalChoice) => {
     onChoice?.(choice);
     controls.close(choice !== "deny");
   };
   return createCommandPanel({ ...options, title: "Permission request", load: () => true,
-    renderBody: () => lines.map((line) => theme.fg("text", line)),
+    renderBody: () => (request ? [...request.header, "",
+      ...(pageCount > 1 ? [`Full input · page ${page + 1}/${pageCount} · pgup/pgdn page · ↑↓ scroll`, ""] : []),
+      ...(request.error ? [request.error] : (request.pages[page] ?? "").split("\n"))] : lines).map((line) => theme.fg("text", line)),
     renderInput: () => theme.fg("muted", `${choices.map((choice, index) =>
       `${index === selected ? "●" : "○"} ${labels[choice]}`).join("   ")} · ←→ choose · enter apply · esc deny`),
     onInput(data, controls) {
       const key = (name: KeyId) => measure.matchesKey(data, name);
       if (key("escape") || key("ctrl+c")) { close(controls, "deny"); return true; }
-      if (key("enter")) { close(controls, choices[selected]); return true; }
+      if (key("enter")) { close(controls, request?.error ? "deny" : choices[selected]); return true; }
+      if (pageCount > 1 && (key("pageUp") || key("pageDown") || key("home") || key("end"))) {
+        page = key("home") ? 0 : key("end") ? pageCount - 1 : Math.max(0, Math.min(pageCount - 1, page + (key("pageUp") ? -1 : 1)));
+        selected = 0;
+        controls.resetScroll();
+        if (key("end")) controls.reveal(Number.MAX_SAFE_INTEGER);
+        tui.requestRender(); return true;
+      }
       if (key("left") || key("shift+tab")) selected = Math.max(0, selected - 1);
       else if (key("right") || key("tab")) selected = Math.min(choices.length - 1, selected + 1);
       else return false;

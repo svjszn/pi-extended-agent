@@ -27,7 +27,7 @@
 
 | Component | Version / default |
 | :--- | :--- |
-| Package | `pi-extended-agent` · `1.4.0` |
+| Package | `pi-extended-agent` · `1.4.1` |
 | Bundled Pi fallback | `1.5.0` |
 | Managed engine | Updated separately with `pi update --engine` |
 | Startup model | Selected by the active Pi engine from its settings and catalog |
@@ -170,7 +170,7 @@ directly. The exit hint includes that chat's ID and its resume command.
 | `/agents [run NAME TASK]` | Configured subagents, with creation, editing, and direct runs |
 | `/scout TASK` | Research the codebase in a separate context |
 | `/lens [TASK]` | Review current working-tree changes or a specified scope in a separate context |
-| `/clear` | Starts a fresh conversation while keeping the current model, effort, and work mode; `/new` is the same command |
+| `/clear` | Starts a fresh conversation while keeping the current model, effort, work mode, and permissions; `/new` is the same command |
 | `/resume` | Search saved chats and continue a selected conversation |
 
 The commands open full terminal screens below the Pi header, aligned to its two-column inset. They have no enclosing border. Read-only screens show `esc to close` in the input row; `/skills` uses that row for search and filtering. Usage bars show the remaining allowance; configuration values align in columns. The shared white and gray palette lives in `ui/theme.ts`, ready for a future `/theme` command. Press **Escape** or **Enter** to close a read-only screen. Scroll with **↑/↓**, **Page Up/Down**, **Home/End**, or the mouse wheel. Opening a viewer does not call a model. Starting `/plan <goal>` or choosing Execute sends the corresponding task to the agent.
@@ -202,10 +202,10 @@ Open `/permissions` to choose a mode in the shared white/gray full-screen interf
 ```
 
 - **Full access** preserves the previous behavior: tools execute without this package's approval prompts. It is the default for new sessions.
-- **Ask before actions** allows Pi's built-in `read`, `find`, `grep`, and `ls` without prompting. File changes, shell commands, and other tools (including MCP and nested tools) require approval for each call. TUI approval screens show the complete tool input with scrolling, start on Deny, and support Allow once. RPC uses Pi's confirmation request; a client must respond. Without an interactive UI, calls requiring approval are denied.
+- **Ask before actions** allows Pi's built-in `read`, `find`, `grep`, and `ls` without prompting. File changes, shell commands, and other tools (including MCP and nested tools) require approval for each call. TUI approval screens show complete input in bounded pages: use PgUp/PgDn for pages, Home/End for the first/last page, and Up/Down to scroll within a page. Approval starts on Deny and supports Allow once. RPC receives the complete input in Pi's confirmation request; a client must respond. Requests that cannot be displayed completely within 256,000 characters are denied. Without an interactive UI, calls requiring approval are denied.
 - **Read only** permits those four built-in reading/search tools. Write, edit, Bash, PowerShell, and external tools are blocked. External tools' read-only hints do not grant permission. Our own memory reads and plan updates are also allowed: they only access the app's project notebook. Memory saves and deletes follow the normal permissions policy.
 
-The selection is saved as session metadata and restored on resume or reload. It applies to subsequent tool calls; it does not stop a tool already running. Pending approval dialogs are cancelled when the mode changes or the session shuts down. The footer reflects the selected mode. These controls govern agent tool calls, including calls through other tools; they are not an operating-system sandbox or a project-directory boundary. Explicit user shell commands (`!` / `!!`), command actions such as installing skills, and extensions' direct code execution keep their existing behavior. Project trust remains separate.
+The selection is saved as session metadata and restored on resume or reload. `/clear` and `/new` preserve it before the new session starts; a failed policy write keeps tools blocked. Unrelated fresh sessions retain the Full access default. It applies to subsequent tool calls; it does not stop a tool already running. Pending approval dialogs are cancelled when the mode changes or the session shuts down. The footer reflects the selected mode. These controls govern agent tool calls, including calls through other tools; they are not an operating-system sandbox or a project-directory boundary. Explicit user shell commands (`!` / `!!`), command actions such as installing skills, and extensions' direct code execution keep their existing behavior. Project trust remains separate.
 
 ### Automatic project memory
 

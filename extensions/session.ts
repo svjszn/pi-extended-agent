@@ -2,6 +2,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../lib/errors.js";
 import { SESSION_PREFERENCES_ENTRY, sessionPreferences, preferenceHandoffKey, handoffPreferences, takePreferences } from "../lib/session-preferences.js";
+import { PERMISSIONS_ENTRY } from "../lib/permissions.js";
 
 const DESCRIPTION = "Clear the conversation and start a new session";
 
@@ -38,11 +39,18 @@ export default function session(pi: ExtensionAPI) {
       report(ctx, "Wait for the current run to finish before clearing the conversation.", true);
       return;
     }
-    let replaced = false;
+    let replaced = false, settingUp = false;
     let release: (() => void) | undefined;
     try {
-      release = handoffPreferences(preferenceHandoffKey(getAgentDir(), ctx.cwd, ctx.sessionManager.getSessionFile()), sessionPreferences(ctx, pi));
+      const preferences = sessionPreferences(ctx, pi);
+      release = handoffPreferences(preferenceHandoffKey(getAgentDir(), ctx.cwd, ctx.sessionManager.getSessionFile()), preferences);
       const result = await ctx.newSession({
+        // setup runs before session_start, regardless of extension load order.
+        // Persist the policy before permissions or subagents can read it.
+        setup: async (manager) => {
+          settingUp = true;
+          manager.appendCustomEntry(PERMISSIONS_ENTRY, { mode: preferences.permissions });
+        },
         withSession: async (fresh: Pick<ExtensionCommandContext, "hasUI" | "ui">) => {
           replaced = true;
           report(fresh, "New session started. The conversation and its context are empty.");
@@ -51,7 +59,7 @@ export default function session(pi: ExtensionAPI) {
       // Nothing was replaced, so the context that started this is still usable.
       if (result.cancelled) report(ctx, "Clearing the conversation was cancelled.");
     } catch (error) {
-      if (replaced) console.error(errorMessage(error));
+      if (replaced || settingUp) console.error(errorMessage(error));
       else report(ctx, errorMessage(error), true);
     } finally { release?.(); }
   };

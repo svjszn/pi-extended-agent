@@ -17,3 +17,14 @@ Use `pi update --check` to check for a release without installing it, or
 An available release appears in the input corner for 12 seconds, alternating
 with the current reasoning effort for 24 seconds. Agent releases show
 `pi update`; engine releases show `pi update --engine`.
+
+The managed Pi engine updates separately with `pi update --engine`. If its
+active files are missing or incomplete, recover with:
+
+```sh
+pi update --engine --rollback
+```
+
+Rollback verifies the previous engine, or the bundled engine when there is no
+previous managed release, before changing the selection. It works without
+loading the damaged active engine. A failed recovery keeps the selection intact.

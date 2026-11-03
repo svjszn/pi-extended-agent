@@ -181,8 +181,6 @@ export async function updateEngine(packageRoot: string, options: UpdateOptions =
   }
   try {
     const state = readRuntimeState(directory);
-    const current = state.version ? cachedRuntime(directory, state.version) : bundledRuntime();
-    log(`pi-extended-agent — active Pi ${current.version}`);
     if (options.rollback) {
       if (state.version === null) { log("The bundled Pi is already active."); return; }
       const previous = state.previous ? cachedRuntime(directory, state.previous) : bundledRuntime();
@@ -191,6 +189,8 @@ export async function updateEngine(packageRoot: string, options: UpdateOptions =
       log(`Restored Pi ${previous.version}. Restart pi to use it.`);
       return;
     }
+    const current = state.version ? cachedRuntime(directory, state.version) : bundledRuntime();
+    log(`pi-extended-agent — active Pi ${current.version}`);
     const offline = options.offline || Boolean(process.env.PI_OFFLINE);
     let target = options.version;
     if (!target && offline) {

@@ -11,14 +11,17 @@ import type { Plan } from "../lib/plan.js";
 
 export default function permissions(pi: ExtensionAPI) {
   let mode: PermissionMode = "full";
+  let initialized = false;
   let lifetime = new AbortController();
   let changes = new AbortController();
   pi.on("session_start", (_event, ctx) => {
+    initialized = false;
     mode = readPermissionMode(ctx.sessionManager.getEntries());
+    initialized = true;
     lifetime = new AbortController(); changes = new AbortController();
     pi.events.emit(PERMISSIONS_CHANGED, { mode });
   });
-  pi.on("session_shutdown", () => { lifetime.abort(); changes.abort(); });
+  pi.on("session_shutdown", () => { initialized = false; lifetime.abort(); changes.abort(); });
   const apply = (value: PermissionMode) => {
     if (value === mode) return;
     // Save before changing enforcement so a failed save leaves the old mode intact.
@@ -28,8 +31,9 @@ export default function permissions(pi: ExtensionAPI) {
   };
   const approve = async (name: string, input: unknown, ctx: ExtensionContext, signal: AbortSignal) => {
     if (!ctx.hasUI || signal.aborted) return false;
-    const lines = permissionRequest(name, input, ctx.cwd);
-    if (ctx.mode !== "tui") return Boolean(await ctx.ui.confirm(`Allow ${name} once?`, lines.join("\n"), { signal }));
+    const request = permissionRequest(name, input, ctx.cwd);
+    if (request.error) { ctx.ui.notify(request.error, "error"); return false; }
+    if (ctx.mode !== "tui") return Boolean(await ctx.ui.confirm(`Allow ${name} once?`, [...request.header, "", request.pages.join("")].join("\n"), { signal }));
     const [{ createPermissionApprovalScreen }, { createHeader }, { createUiTheme }] = await Promise.all([
       import("../ui/permissions-screen.js"), import("../ui/chrome.js"), import("../ui/theme.js"),
     ]);
@@ -43,7 +47,7 @@ export default function permissions(pi: ExtensionAPI) {
       });
       const footer = tui.children.at(-1);
       const abort = () => { panel.dispose(); done(false); };
-      const panel = createPermissionApprovalScreen({ tui, theme, measure, done, lines,
+      const panel = createPermissionApprovalScreen({ tui, theme, measure, done, request,
         renderHeader: (width) => header.render(width), renderFooter: (width) => footer?.render(width),
         onDispose: () => { signal.removeEventListener("abort", abort); header.dispose(); },
       });
@@ -52,6 +56,7 @@ export default function permissions(pi: ExtensionAPI) {
     }, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", row: 0, col: 0, margin: 0 } }));
   };
   pi.on("tool_call", async (event, ctx) => {
+    if (!initialized) return { block: true, terminate: true, reason: "Session permissions have not been initialized." };
     const signal = AbortSignal.any([lifetime.signal, changes.signal, ...(ctx.signal ? [ctx.signal] : [])]);
     const tools = pi.getAllTools();
     const marker = ctx.sessionManager.getEntries().filter((e) => e.type === "custom" && e.customType === PLAN_ENTRY).at(-1);

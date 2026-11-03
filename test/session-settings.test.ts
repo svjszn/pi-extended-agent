@@ -1,21 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentSessionRuntime, createAgentSessionServices, createAgentSessionFromServices, createCodemodeExtension,
   ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { modelFixture, present } from "./helpers.ts";
+import { assistantFixture, modelFixture, present } from "./helpers.ts";
 
 const { codeModeBuiltin, readCodeMode } = await import(new URL("../dist/lib/code-mode.js", import.meta.url).href) as typeof import("../lib/code-mode.js");
 const { PLAN_ENTRY, PlanStore, isPlanning } = await import(new URL("../dist/lib/plan.js", import.meta.url).href) as typeof import("../lib/plan.js");
 const { projectFiles } = await import(new URL("../dist/lib/project-state.js", import.meta.url).href) as typeof import("../lib/project-state.js");
 const { redirectedCommand } = await import(new URL("../dist/lib/command-policy.js", import.meta.url).href) as typeof import("../lib/command-policy.js");
 const { SESSION_PREFERENCES_ENTRY } = await import(new URL("../dist/lib/session-preferences.js", import.meta.url).href) as typeof import("../lib/session-preferences.js");
+const { readPermissionMode, PERMISSIONS_ENTRY } = await import(new URL("../dist/lib/permissions.js", import.meta.url).href) as typeof import("../lib/permissions.js");
 
-async function fixture(t: TestContext, persisted = false) {
+async function fixture(t: TestContext, persisted = false, permissionsFirst = false) {
   const base = resolve(".local/session-settings-tests"); mkdirSync(base, { recursive: true });
   const cwd = mkdtempSync(join(base, "case-")), agentDir = join(cwd, "profile");
   const previous = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -28,11 +29,13 @@ async function fixture(t: TestContext, persisted = false) {
   });
   let cancelNext = false;
   const errors: string[] = [];
+  const initialPermissions: string[] = [];
   const create: Parameters<typeof createAgentSessionRuntime>[0] = async (options) => {
     const services = await createAgentSessionServices({ ...options, settingsManager: settings, modelRuntime: models,
       resourceLoaderOptions: { noExtensions: true, noSkills: true, noContextFiles: true, noPromptTemplates: true, noThemes: true,
-        additionalExtensionPaths: ["builtin:codemode", ...["session", "workspace", "permissions"].map((name) => fileURLToPath(new URL(`../dist/extensions/${name}.js`, import.meta.url)))],
+        additionalExtensionPaths: ["builtin:codemode", ...(permissionsFirst ? ["permissions", "session", "workspace"] : ["session", "workspace", "permissions"]).map((name) => fileURLToPath(new URL(`../dist/extensions/${name}.js`, import.meta.url)))],
         extensionFactories: [codeModeBuiltin(createCodemodeExtension), (pi) => {
+          pi.on("session_start", (_event, ctx) => { initialPermissions.push(readPermissionMode(ctx.sessionManager.getEntries())); });
           pi.on("session_before_switch", () => { if (cancelNext) { cancelNext = false; return { cancel: true }; } });
         }],
       },
@@ -60,8 +63,61 @@ async function fixture(t: TestContext, persisted = false) {
   const clear = (command: "/new" | "/clear") => runtime.session.prompt(redirectedCommand(command) ?? command);
   const planStore = () => new PlanStore(projectFiles(cwd, agentDir), runtime.session.sessionId);
   const plan = () => planStore().read();
-  return { runtime, models, settings, clear, plan, planStore, errors, cancel: () => { cancelNext = true; } };
+  return { runtime, models, settings, clear, plan, planStore, errors, initialPermissions, cancel: () => { cancelNext = true; } };
 }
+
+async function attemptWrite(session: AgentSession, path: string) {
+  const id = `session-write-${path}`;
+  session.agent.state.messages.push(assistantFixture([{ type: "toolCall", id, name: "codemode", arguments: {} }], { stopReason: "toolUse" }));
+  return session.extensionRunner.createToolContext(id, undefined).executeTool("write", { path, content: "fixture" });
+}
+
+test("clearing preserves permissions before session_start and keeps actual writes gated through reload and resume", async t => {
+  for (const persisted of [false, true]) for (const mode of ["ask", "read-only"]) for (const command of ["/new", "/clear"] as const) {
+    await t.test(`${persisted ? "disk" : "memory"} ${mode} ${command}`, async t => {
+      const f = await fixture(t, persisted, true);
+      await f.runtime.session.prompt(`/permissions ${mode}`);
+      assert.equal((await attemptWrite(f.runtime.session, "before.txt")).isError, true);
+      await f.clear(command);
+      assert.equal(f.initialPermissions.at(-1), mode, "even the first start hook must see the inherited policy");
+      assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), mode);
+      assert.equal((await attemptWrite(f.runtime.session, "after.txt")).isError, true);
+      assert.equal(existsSync(join(f.runtime.session.sessionManager.getCwd(), "after.txt")), false);
+      await f.runtime.session.reload();
+      assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), mode);
+      assert.equal((await attemptWrite(f.runtime.session, "reloaded.txt")).isError, true);
+      if (persisted) {
+        const manager = f.runtime.session.sessionManager;
+        manager.appendMessage({ role: "user", content: "Persist the fixture conversation", timestamp: Date.now() });
+        manager.appendMessage(assistantFixture([{ type: "text", text: "Fixture" }]));
+        const file = present(manager.getSessionFile());
+        await f.runtime.newSession();
+        assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "full", "unrelated sessions retain their documented default");
+        await f.runtime.switchSession(file);
+        assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), mode);
+        assert.equal((await attemptWrite(f.runtime.session, "resumed.txt")).isError, true);
+      }
+      assert.deepEqual(f.errors, []);
+    });
+  }
+});
+
+test("a failed inherited-policy write leaves the replacement unable to run tools", async t => {
+  const f = await fixture(t, false, true);
+  await f.runtime.session.prompt("/permissions read-only");
+  const oldId = f.runtime.session.sessionId;
+  const original = SessionManager.prototype.appendCustomEntry;
+  const failing = t.mock.method(SessionManager.prototype, "appendCustomEntry", function (this: SessionManager, type: string, data: unknown) {
+    if (type === PERMISSIONS_ENTRY && this.getSessionId() !== oldId) throw new Error("Fixture policy write failed");
+    return original.call(this, type, data);
+  });
+  await f.clear("/clear");
+  failing.mock.restore();
+  const result = await attemptWrite(f.runtime.session, "never-written.txt");
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result), /permissions.*initialized/i);
+  assert.equal(existsSync(join(f.runtime.session.sessionManager.getCwd(), "never-written.txt")), false);
+});
 
 test("/new and /clear retain model, effort and every work mode across fresh runtime factories", async (t) => {
   for (const persisted of [false, true]) await t.test(persisted ? "disk session" : "in-memory session", async (t) => {
@@ -107,11 +163,14 @@ test("cancelled and failed replacements do not leak preferences into a later unr
   const f = await fixture(t);
   await f.runtime.session.setModel(present(f.models.getModel("session-fixture", "selected")));
   f.runtime.session.setThinkingLevel("high"); await f.runtime.session.prompt("/mode code");
+  await f.runtime.session.prompt("/permissions read-only");
   const oldId = f.runtime.session.sessionId;
   f.cancel(); await f.clear("/clear");
   assert.equal(f.runtime.session.sessionId, oldId); assert.equal(f.runtime.session.thinkingLevel, "high");
+  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "read-only");
   await f.runtime.newSession();
   assert.equal(f.runtime.session.model?.id, "default"); assert.equal(f.runtime.session.thinkingLevel, "low");
+  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "full");
   assert.equal(f.runtime.session.sessionManager.getEntries().some((entry) => entry.type === "custom" && entry.customType === SESSION_PREFERENCES_ENTRY), false);
   await f.runtime.session.setModel(present(f.models.getModel("session-fixture", "selected")));
   f.runtime.session.setThinkingLevel("high"); await f.runtime.session.prompt("/mode code");
