@@ -156,6 +156,7 @@ directly. The exit hint includes that chat's ID and its resume command.
 | `/usage` | Active provider, available account usage limits, and local reset times |
 | `/stats` | Annual activity calendar and local history statistics |
 | `/status` | Pi version, session ID, login method, active model, MCP servers, and tools |
+| `/doctor` | Local installation and session checks with explicit recovery steps |
 | `/config` | Configuration overview with an integrated Preferences tab |
 | `/context` | Context window map, estimated breakdown, loaded instructions, skills, and active tools |
 | `/effort [level]` | Choose reasoning effort or set a supported level directly |
@@ -190,6 +191,27 @@ The command menu omits `/settings`, `/tree`, `/thinking`, `/scoped-models`, `/im
 `/effort` opens a horizontal slider with the levels supported by the current model. Use **←/→** or drag the slider, apply with **Enter**, or cancel with **Escape**. High and xhigh glow purple; max uses an animated rainbow when the model supports it. `/effort high` sets a level directly. The current effort appears in the header. The input-corner glow stays static while idle and animates only during active work while the input is focused; this does not change the selected reasoning effort.
 
 `/model` uses the same header, two-column inset, borderless body, monochrome palette, and input dock as the other command screens. Search stays in the input row; the current model uses `●` and the highlighted row is bold. Native model discovery, scoped-model switching with Tab, selection with Enter, and saving the default with Ctrl+S retain Pi's behavior. Escape cancels the selector and its background catalog refresh. Model-screen compatibility is checked before activating an engine update.
+
+### Diagnose the installation
+
+Doctor is part of the unreleased work toward 2.0.0.
+
+Run `/doctor` inside Pi for a read-only health report in the shared command screen.
+It checks the Node.js version, launcher and production files, bundled and selected
+engines, rollback files, updater locks, profile access, settings JSON, and current
+session model, project trust, permissions and plan state. It warns when a restart
+is needed to use a newly selected engine. Each warning or error includes a next
+step where one is available.
+
+If Pi cannot start, run `pi doctor` in your terminal. `pi doctor --json` produces
+a structured report without loading or executing the selected engine. Exit
+status is 0 for OK/warnings, 1 for errors, and 2 for invalid arguments.
+
+Doctor makes no changes, runs no shell commands or network requests, and does not
+open `auth.json`, `models.json`, or session transcripts. Reports omit settings
+values and shorten your home directory to `~`. Engine checks validate required
+files and paths; they do not replace the compatibility check performed before
+an engine is activated. Credentials and provider connectivity are not tested.
 
 ### Agent permissions
 

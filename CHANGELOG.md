@@ -4,6 +4,8 @@
 
 - Rename permission modes to `allow`, `ask`, and `deny` across commands, menus, the footer, and diagnostics. Preserve the existing tool policies and recognize legacy `full` and `read-only` values in commands and saved sessions.
 
+- Add `/doctor` for local installation and session checks, plus standalone `pi doctor` and `pi doctor --json` that work without loading the selected engine. Report incomplete builds, broken engine selections, rollback availability, update locks, profile/settings issues, and session model, permissions, trust and plan state. Keep diagnostics read-only, omit credentials and setting values, and provide explicit recovery steps.
+
 ## 1.4.1
 
 - Preserve the selected permission mode across `/clear` and `/new`, before replacement extensions start. Keep tools blocked if the inherited policy cannot be saved, and retain the existing defaults for unrelated fresh sessions.

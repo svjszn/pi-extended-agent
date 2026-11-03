@@ -299,7 +299,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     await factory(fakePi as ExtensionAPI);
   }
   assert.ok(!commands.has("perf"), "Development performance command must not ship");
-  for (const name of ["usage", "status", "stats", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "mode", "theme", "color", "agents", "scout", "lens", "clear"]) {
+  for (const name of ["usage", "status", "stats", "doctor", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "mode", "theme", "color", "agents", "scout", "lens", "clear"]) {
     assert.ok(commands.has(name), `Runtime failed to register /${name}`);
   }
   for (const name of ["task", "ask_user"]) assert.ok(registeredTools.has(name), `Runtime failed to register ${name}`);

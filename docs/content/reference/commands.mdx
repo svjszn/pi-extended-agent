@@ -12,6 +12,7 @@ description: Slash commands and terminal commands available in Pi Extended Agent
 | `/usage` | Available account usage limits for the active provider |
 | `/stats` | Local activity calendar and history statistics |
 | `/status` | Engine version, session ID, login, model, MCP metadata, and tools |
+| `/doctor` | Read-only installation and session checks with recovery steps |
 | `/config` | Configuration overview and editable Preferences tab |
 | `/context` | Context estimate, breakdown, and loaded resources |
 | `/effort [level]` | Choose or directly set a supported reasoning level |
@@ -65,6 +66,8 @@ pi --resume
 pi --model PROVIDER/MODEL_ID
 pi --tui-mode regular
 pi --help
+pi doctor
+pi doctor --json
 pi update
 pi update --check
 pi update --engine
@@ -74,3 +77,25 @@ pi update --rollback
 
 `pi-extended-agent` is an alias for the same executable. Update options are
 described in [Updates](/guide/updates).
+
+### Diagnostics
+
+Doctor is part of the unreleased work toward 2.0.0.
+
+`/doctor` opens the shared command screen with OK, WARN and ERROR checks. It
+inspects installation and engine files, profile access, settings JSON, and the
+current session's model selection, permissions, project trust and saved plan.
+It provides recovery steps and reports when the running engine differs from
+the engine selected for the next launch.
+
+`pi doctor` works before engine initialization, so it can diagnose a selected
+engine that no longer starts. `pi doctor --json` emits a report with
+`schemaVersion: 1`, check IDs/statuses and summary counts. Exit status is **0**
+for OK/warnings, **1** for errors and **2** for invalid arguments.
+
+Checks are local and read-only. No credentials, provider connections or engine
+compatibility are tested, and no repair is applied. Credential files, model
+configuration and session transcripts are not opened; setting values are
+omitted, and the home directory is shortened to `~`. Settings file links are
+reported without following them. Project settings are inspected only inside
+a trusted active session. The standalone command does not inspect a live chat.

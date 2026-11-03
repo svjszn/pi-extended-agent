@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import type { PanelOptions, Period } from "../ui/command-panel.js";
 import type { Palette } from "../ui/types.js";
 import { errorMessage } from "../lib/errors.js";
+import { fileURLToPath } from "node:url";
 
 interface CommandDefinition<T> {
   title: string; periods?: Period[];
@@ -69,5 +70,14 @@ export default function commands(pi: ExtensionAPI) {
       const settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted() });
       return readContextReport(ctx, pi, settings);
     } };
+  });
+  register("doctor", "Diagnose this installation and session without changing files or contacting providers", async () => {
+    const [{ readDoctorReport }, { sessionDoctorChecks }, { doctorLines }] = await Promise.all([
+      import("../bin/doctor.js"), import("../lib/doctor.js"), import("../ui/doctor-view.js"),
+    ]);
+    return { title: "Doctor", renderBody: doctorLines, load: (ctx, signal) => readDoctorReport({
+      packageRoot: fileURLToPath(new URL("../../", import.meta.url)), cwd: ctx.cwd, agentDir: getAgentDir(),
+      projectTrusted: ctx.isProjectTrusted(), sessionChecks: sessionDoctorChecks(ctx, getAgentDir()), runningEngineVersion: VERSION, signal,
+    }) };
   });
 }

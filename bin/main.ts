@@ -10,6 +10,18 @@ let args = process.argv.slice(2);
 // owns its Pi dependency and handles updates through its own entry point.
 process.env.PI_SKIP_VERSION_CHECK = "1";
 process.env.PI_EXTENDED_AGENT_VERSION = AGENT_VERSION;
+if (args[0] === "doctor") {
+  if (args.length > 2 || (args[1] && !["--json", "--help", "-h"].includes(args[1]))) {
+    console.error("Use pi doctor [--json]."); process.exit(2);
+  }
+  if (args[1] === "--help" || args[1] === "-h") {
+    console.log("Usage: pi doctor [--json]\nCheck this installation locally without loading the selected engine or reading credentials.\nExit status: 0 for OK/warnings, 1 for errors, 2 for invalid arguments."); process.exit(0);
+  }
+  const [{ readDoctorReport, doctorAgentDir }, { doctorText }] = await Promise.all([import("./doctor.js"), import("../lib/doctor.js")]);
+  const report = readDoctorReport({ packageRoot: fileURLToPath(new URL("../../", import.meta.url)), cwd: process.cwd(), agentDir: doctorAgentDir() });
+  console.log(args[1] === "--json" ? JSON.stringify(report, null, 2) : doctorText(report).join("\n"));
+  process.exit(report.summary.errors ? 1 : 0);
+}
 if (args.length === 1 && args[0] === "--version") {
   console.log(`Pi Extended Agent ${AGENT_VERSION}\nPi Coding Agent ${selectedRuntime().version}`);
   process.exit(0);

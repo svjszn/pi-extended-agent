@@ -42,14 +42,14 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
       noPromptTemplates: true, noContextFiles: true, additionalExtensionPaths: [root] });
     const selectors = ["ask-user", "agents", "appearance", "config", "effort", "permissions", "skills", "workspace"].map(name => `ui/${name}-screen.js`);
     const deferred = [...selectors, "ui/command-views.js", "ui/context-view.js", "ui/status-view.js",
-      "lib/activity.js", "lib/config.js", "lib/skills.js", "lib/status.js", "lib/usage.js", "bin/update.js", "bin/verify-runtime.js"];
+      "lib/activity.js", "lib/config.js", "lib/skills.js", "lib/status.js", "lib/usage.js", "bin/doctor.js", "lib/doctor.js", "ui/doctor-view.js", "bin/update.js", "bin/verify-runtime.js"];
     let views = 0;
     for (let round = 0; round < (failApproval ? 1 : 2); round++) {
       await loader.reload();
       const loaded = loader.getExtensions(); assert.deepEqual(loaded.errors, []);
       assert.equal(loaded.extensions.length, JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions.length);
       const commands = new Map(loaded.extensions.flatMap(extension => [...extension.commands].map(([name, command]) => [name, commandFixture(command)] as const)));
-      for (const name of ["agents", "scout", "lens", "usage", "stats", "status", "context", "config", "skills", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
+      for (const name of ["agents", "scout", "lens", "doctor", "usage", "stats", "status", "context", "config", "skills", "effort", "permissions", "memory", "plan", "prompt", "theme", "color"]) {
         assert.ok(commands.has(name), `Missing /${name} before opening any screen`);
       }
       assert.equal(commands.has("perf"), false);
@@ -96,14 +96,14 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
         assert.equal(views, 0);
         continue;
       }
-      for (const name of ["agents", "stats", "status", "context", "config", "skills", "permissions"]) {
+      for (const name of ["agents", "doctor", "stats", "status", "context", "config", "skills", "permissions"]) {
         await present(commands.get(name)).handler("", ctx);
         assert.notEqual(notices.at(-1)?.type, "error", `${name}: ${notices.at(-1)?.message}`);
       }
       if (!round) for (const name of selectors) assert.equal(loadedModules.has(name), false, `Headless command loaded ${name}`);
       ctx.mode = "tui";
       for (const [name, title, args = ""] of [["skills", /Skills/], ["stats", /Statistics/], ["usage", /Usage/], ["status", /Status/],
-        ["context", /Context/], ["config", /Configuration/], ["permissions", /Permissions/], ["theme", /Theme/],
+        ["context", /Context/], ["doctor", /Doctor/], ["config", /Configuration/], ["permissions", /Permissions/], ["theme", /Theme/],
         ["color", /Color/], ["memory", /Memory/], ["plan", /Plan/], ["prompt", /System prompt/],
         ["prompt", /Prompt/, "session"], ["effort", /Effort/], ["agents", /Subagents/]] as [string, RegExp, string?][]) {
         expected = title;
@@ -188,6 +188,6 @@ if (process.argv[2] === "--probe") {
       env: { ...process.env, PI_CODING_AGENT_DIR: join(directory, "profile"), PI_EXTENDED_RUNTIME_DIR: join(directory, "runtimes"), PI_OFFLINE: "1" },
     });
     assert.equal(result.status, 0, result.stderr.slice(-4000));
-    assert.deepEqual(JSON.parse(present(result.stdout.trim().split("\n").at(-1))), { views: failure ? 0 : 32, failApproval: failure, bound: mode !== "unbound" });
+    assert.deepEqual(JSON.parse(present(result.stdout.trim().split("\n").at(-1))), { views: failure ? 0 : 34, failApproval: failure, bound: mode !== "unbound" });
   });
 }
