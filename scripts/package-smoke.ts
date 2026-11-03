@@ -40,7 +40,7 @@ const { session } = await createAgentSession({ cwd, agentDir, modelRuntime, sett
 let resumed;
 try {
   await session.bindExtensions({ mode: "print" });
-  const required = ["agents", "scout", "lens", "doctor", "config", "model", "effort", "permissions", "memory", "plan", "mode", "prompt", "theme", "color"];
+  const required = ["agents", "scout", "lens", "doctor", "diff", "nano", "config", "model", "effort", "permissions", "memory", "plan", "mode", "prompt", "theme", "color"];
   const commands = session.extensionRunner.getRegisteredCommands().map((command) => command.name);
   for (const name of required.filter((name) => name !== "model")) assert.ok(commands.includes(name), `Missing /${name}`);
   assert.equal(commands.includes("perf"), false, "Installed package registered a development command");

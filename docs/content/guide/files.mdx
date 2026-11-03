@@ -1,0 +1,88 @@
+---
+title: Files and changes
+description: Browse Git changes and edit project files directly inside Pi.
+---
+
+# Files and changes
+
+These commands are part of the upcoming 2.0.0 release. They require an idle
+interactive TUI and never call a model or add file content to the conversation.
+
+## View changes
+
+```text
+/diff
+/diff --staged
+/diff src
+/diff --staged "src/file with spaces.ts"
+```
+
+The view uses the current Git repository, including when Pi was launched in a
+subdirectory. A path filters the result and is resolved from Pi's working
+directory. **1** shows working-tree changes against the index, including
+untracked files; **2** shows staged changes against HEAD. Unborn branches,
+deletions, renames, and binary-file notices are supported.
+
+Select files with **Up/Down**. **Tab** or **Enter** switches between the file
+list and patch; **PgUp/PgDn** scroll the patch, **Home/End** jump, and
+**Left/Right** scroll long lines. **Ctrl+R** refreshes. Escape returns to the
+list, then closes. Wide terminals show both panes; narrow terminals show one.
+
+The viewer never stages, reverts, or writes files. Git must be available on
+PATH. External diff programs and text conversion filters are disabled. Git
+output is limited to 2 MiB and lists to 5,000 files; use a narrower path when
+a repository exceeds those limits. Untracked-file previews use the editor's
+text-file limits below.
+
+## Browse and edit
+
+```text
+/nano
+/nano src
+/nano src/main.ts
+```
+
+The tree starts in Pi's working directory. A directory argument narrows its
+root; a file argument opens the file. Hidden entries are visible, and directory
+contents are loaded only when expanded. The command accepts paths inside its
+root; links and junctions are listed but cannot be followed.
+
+| Key | Action |
+| --- | --- |
+| Up / Down | Select a tree entry or move the text cursor |
+| Enter / Right in the tree | Open a file or expand a directory |
+| Left in the tree | Collapse a directory or select its parent |
+| Tab in the tree | Focus the opened file |
+| Shift+Tab | Switch between the tree and file |
+| Tab in a file | Insert a tab |
+| Enter in a file | Insert a newline |
+| Ctrl+S | Save the file |
+| Ctrl+Z / Ctrl+Y | Undo / redo |
+| PgUp / PgDn | Move by a page |
+| Ctrl+R in the tree | Refresh directory entries |
+| Escape | Return to the tree, then close |
+| Ctrl+C | Close, checking for unsaved edits |
+
+An asterisk marks unsaved text. Opening another file or closing with unsaved
+edits offers **Ctrl+S** to save and continue, **Ctrl+D** to discard, or Escape
+to keep editing. A failed save keeps your buffer. Files changed, replaced, or
+removed on disk are never silently overwritten; resolve the change externally
+or discard and reopen the file. Copy any edits you want to retain before
+closing Pi or replacing/reloading the session; unsaved buffers are in memory.
+
+Saves use a temporary file next to the destination and an atomic rename. BOM,
+tabs, spaces, line endings, and presence or absence of a final newline survive
+editing. Supported files are existing UTF-8 text up to 1 MiB with consistent
+LF, CRLF, or CR endings. Binary content, terminal control characters, mixed
+line endings, and saving hard-linked files are refused. This initial editor
+does not create, delete, rename, or move files. Large directories are bounded
+to 5,000 entries each, 10,000 expanded entries, and 40 levels of tree depth;
+use `/nano <directory>` to narrow a large tree.
+
+## Manual actions and agent permissions
+
+Reading and saving through these commands are explicit user actions, like
+other slash-command actions. They do not grant the agent access, change
+`allow`/`ask`/`deny`, trust the project, or approve plan execution. In particular,
+a manual save is available even when agent changes are blocked. Project code,
+tools, and extensions are not executed by the editor.

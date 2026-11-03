@@ -64,6 +64,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   assert.equal(typeof api.CustomEditor, "function", "Missing CustomEditor API");
   const tuiEntry = pathToFileURL(require.resolve("@earendil-works/pi-tui"));
   const tuiApi = await import(tuiEntry.href) as TuiApi;
+  assert.equal(typeof tuiApi.renderFakeCursor, "function", "Missing software cursor renderer for /nano");
   const { Container, Spacer, matchesKey, truncateToWidth, visibleWidth, stripTerminalSequences } = tuiApi;
   // These private adapters deliberately declare only the surface we exercise.
   // The candidate-runtime probe below checks their actual behavior before activation.
@@ -299,7 +300,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     await factory(fakePi as ExtensionAPI);
   }
   assert.ok(!commands.has("perf"), "Development performance command must not ship");
-  for (const name of ["usage", "status", "stats", "doctor", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "mode", "theme", "color", "agents", "scout", "lens", "clear"]) {
+  for (const name of ["usage", "status", "stats", "doctor", "diff", "nano", "config", "skills", "context", "effort", "permissions", "memory", "plan", "prompt", "mode", "theme", "color", "agents", "scout", "lens", "clear"]) {
     assert.ok(commands.has(name), `Runtime failed to register /${name}`);
   }
   for (const name of ["task", "ask_user"]) assert.ok(registeredTools.has(name), `Runtime failed to register ${name}`);

@@ -13,6 +13,8 @@ description: Slash commands and terminal commands available in Pi Extended Agent
 | `/stats` | Local activity calendar and history statistics |
 | `/status` | Engine version, session ID, login, model, MCP metadata, and tools |
 | `/doctor` | Read-only installation and session checks with recovery steps |
+| `/diff [--staged] [path]` | Browse working-tree and staged Git changes |
+| `/nano [path]` | Browse directories and edit existing text files in Pi |
 | `/config` | Configuration overview and editable Preferences tab |
 | `/context` | Context estimate, breakdown, and loaded resources |
 | `/effort [level]` | Choose or directly set a supported reasoning level |
@@ -33,6 +35,12 @@ description: Slash commands and terminal commands available in Pi Extended Agent
 
 Native Pi commands such as `/login`, `/logout`, `/new`, `/resume`, `/compact`,
 `/reload`, and `/quit` remain available.
+
+### Files and changes
+
+`/diff` and `/nano` are part of the upcoming 2.0.0 release. Both require an idle
+interactive TUI. See [Files and changes](/guide/files) for navigation, saving,
+supported files, and the distinction between manual edits and agent permissions.
 
 ### Memory actions
 

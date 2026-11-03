@@ -17,12 +17,14 @@ export const UI_COLORS = Object.freeze({
   track: "#3d3d3d",
   userMessage: "#202020",
   background: "#000000",
+  diffAdded: "#83c991", diffRemoved: "#e38b8b",
   ...EFFORT_COLORS,
 });
 
 export const LIGHT_COLORS = Object.freeze({
   primary: "#171717", text: "#171717", muted: "#525252", dim: "#737373",
   border: "#737373", track: "#e5e5e5", userMessage: "#f0f0f0", background: "#ffffff",
+  diffAdded: "#236b38", diffRemoved: "#a52f35",
   ...EFFORT_COLORS,
 });
 

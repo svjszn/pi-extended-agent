@@ -157,6 +157,8 @@ directly. The exit hint includes that chat's ID and its resume command.
 | `/stats` | Annual activity calendar and local history statistics |
 | `/status` | Pi version, session ID, login method, active model, MCP servers, and tools |
 | `/doctor` | Local installation and session checks with explicit recovery steps |
+| `/diff [--staged] [path]` | Browse working-tree and staged Git changes |
+| `/nano [path]` | Browse directories, open text files, edit, and save inside Pi |
 | `/config` | Configuration overview with an integrated Preferences tab |
 | `/context` | Context window map, estimated breakdown, loaded instructions, skills, and active tools |
 | `/effort [level]` | Choose reasoning effort or set a supported level directly |
@@ -212,6 +214,42 @@ open `auth.json`, `models.json`, or session transcripts. Reports omit settings
 values and shorten your home directory to `~`. Engine checks validate required
 files and paths; they do not replace the compatibility check performed before
 an engine is activated. Credentials and provider connectivity are not tested.
+
+### Files and changes
+
+The upcoming 2.0.0 release includes two interactive commands:
+
+```text
+/diff
+/diff --staged src
+/nano
+/nano src/main.ts
+```
+
+`/diff` shows changes in the current Git repository. Press **1** for working-tree
+changes (including untracked files), **2** for staged changes, and **Tab** or
+**Enter** to switch between the file list and patch. Use arrows to navigate,
+**PgUp/PgDn** to scroll the patch, **Left/Right** to scroll long lines, and
+**Ctrl+R** to refresh. Escape returns to the list, then closes. This command
+does not stage, revert, or modify files.
+
+`/nano` opens the actual working directory, including hidden entries, with
+directories loaded when expanded. A directory argument becomes the tree root;
+a file argument opens that file. Use **Up/Down** to select, **Enter/Right** to
+open or expand, and **Left** to collapse or select the parent. Wide terminals
+show the tree and file side by side; narrow terminals show the focused pane.
+**Tab** enters the editor from the tree, **Shift+Tab** switches panes, and Tab
+inside a file inserts a tab. **Ctrl+S** saves, **Ctrl+Z/Ctrl+Y** undo/redo,
+**PgUp/PgDn** move by a page, and Escape returns to the tree. Closing or opening
+another file with unsaved edits offers save, discard, or keep editing.
+
+Saves are atomic and refuse to overwrite a file changed on disk. UTF-8 BOM,
+tabs, trailing spaces, LF/CRLF/CR endings, and the final newline are preserved.
+The editor supports existing UTF-8 text files up to 1 MiB; binary files, mixed
+line endings, links/junctions, hard-link saves, and paths outside the tree root
+are refused. Both commands require an idle interactive TUI and make no model
+requests. Manual saves are your explicit actions and do not change agent
+permissions, project trust, or plan approval. Closing Pi discards unsaved edits.
 
 ### Agent permissions
 
