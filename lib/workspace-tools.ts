@@ -19,7 +19,7 @@ export function isWorkspaceBookkeeping(name: string, input: unknown, tools: Tool
   return isWorkspaceTool(name, tools) && (name === "update_plan" || ["list", "read"].includes(String((input as { action?: unknown })?.action)));
 }
 /**
- * Delegation passes the parent's plan and read-only barriers because the subagent
+ * Delegation passes the parent's plan and deny barriers because the subagent
  * carries them itself: its own guard clamps it to read and search tools, and any
  * call beyond that is blocked inside the subagent rather than at this boundary.
  */

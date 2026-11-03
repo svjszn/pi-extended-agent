@@ -101,7 +101,7 @@ test("footer aligns context at the right, refreshes values, and fits narrow scre
   const { ctx, state, pi } = fixture();
   const footer = createFooter({}, {}, createUiTheme(), {}, measure, () => readContextSummary(ctx, pi));
   let line = measure.stripTerminalSequences(footer.render(80)[0]);
-  assert.ok(line.startsWith("  auto mode"));
+  assert.ok(line.startsWith("  allow mode"));
   assert.ok(line.endsWith("~24k / 200k · 12% context  "));
   assert.equal(measure.visibleWidth(line), 80);
   state.usage = { tokens: 40000, contextWindow: 100000, percent: 40 };

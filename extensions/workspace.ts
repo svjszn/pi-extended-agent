@@ -207,7 +207,7 @@ export default function workspace(pi: ExtensionAPI) {
   });
   const sections = () => {
     const sections: Record<string, string> = {};
-    sections.pi_extended_memory = `${memoryPrompt(memory)}\nMemory reads are allowed in every permission mode; saves/deletes require approval in Ask mode and are blocked in Read only and Plan modes.`;
+    sections.pi_extended_memory = `${memoryPrompt(memory)}\nMemory reads are allowed in every permission mode; saves/deletes require approval in Ask mode and are blocked in Deny and Plan modes.`;
     const additions = promptAdditions(prompts.read("global"), prompts.read("project"), sessionAddition);
     if (additions) sections.pi_extended_prompt = additions;
     if (code.enabled) sections.pi_extended_code_mode = "CODE MODE: Pi's native codemode tool is available alongside ordinary tools. Batch independent reads and searches with JavaScript and Promise.allSettled when useful; await every call and return bounded results with text(). Keep dependent actions and shared-state mutations in order. All nested calls remain subject to the current permissions. Do not bypass blocked tools or omit required validation.";
@@ -393,7 +393,7 @@ export default function workspace(pi: ExtensionAPI) {
         const effective = () => {
           const extra = sections();
           const mode = readPermissionMode(ctx.sessionManager.getEntries());
-          if (mode !== "full") extra.pi_extended_permissions = `Agent permissions: ${PERMISSION_DESCRIPTIONS[mode]}`;
+          if (mode !== "allow") extra.pi_extended_permissions = `Agent permissions: ${PERMISSION_DESCRIPTIONS[mode]}`;
           return buildSystemPrompt(base.forceSystemPrompt !== undefined ? { ...base, forceSystemPrompt: `${base.forceSystemPrompt}\n\n${Object.values(extra).join("\n\n")}` }
             : { ...base, sections: { ...base.sections, ...extra } });
         };

@@ -322,11 +322,15 @@ test("agent and engine notices use separate caches and point to their own comman
 
 test("combined notices check both release streams without confusing their versions", async (t) => {
   const directory = fixture(t);
+  const currentAgent = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
+  const nextRelease = `${Number(currentAgent.split(".")[0]) + 1}.0.0`;
   let calls = 0;
-  const notice = await checkForUpdates("1.4.0", { directory, offline: false, latest: async () => { calls++; return "1.5.0"; } });
+  const notice = await checkForUpdates("1.4.0", { directory, offline: false, latest: async () => { calls++; return nextRelease; } });
   assert.equal(calls, 2);
-  assert.match(present(notice), /Pi Extended Agent 1\.5\.0.*pi update in/);
-  assert.match(present(notice), /Pi 1\.5\.0.*pi update --engine/);
+  assert.ok(present(notice).includes(`Pi Extended Agent ${nextRelease}`));
+  assert.match(present(notice), /Run pi update in/);
+  assert.ok(present(notice).includes(`Pi ${nextRelease}`));
+  assert.match(present(notice), /pi update --engine/);
   const reports = await checkForReleaseUpdates("1.4.0", { directory, offline: false, latest: async () => assert.fail("cached release checks must not fetch") });
   assert.deepEqual(reports.map(({ kind, command }) => [kind, command]), [["agent", "pi update"], ["engine", "pi update --engine"]]);
 });

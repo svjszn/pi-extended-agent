@@ -18,7 +18,7 @@ export default function piInterface(pi: ExtensionAPI) {
   let activeTui: TUI | undefined;
   let terminalChrome: ReturnType<typeof acquireTerminalChrome> | undefined;
   let context: ContextSummary | undefined;
-  let permissionMode: PermissionMode = "full", stopPermissions: (() => void) | undefined;
+  let permissionMode: PermissionMode = "allow", stopPermissions: (() => void) | undefined;
   let planning = false, stopPlan: (() => void) | undefined;
   let codeMode = false, stopCodeMode: (() => void) | undefined;
   const listenPermissions = () => {
@@ -100,7 +100,7 @@ export default function piInterface(pi: ExtensionAPI) {
     if (!isSessionReplaced(event)) {
       terminalChrome?.dispose(); terminalChrome = undefined;
       activeTui = undefined;
-      context = undefined; permissionMode = "full"; planning = false; codeMode = false;
+      context = undefined; permissionMode = "allow"; planning = false; codeMode = false;
     }
     stopPermissions?.(); stopPermissions = undefined;
     stopPlan?.(); stopPlan = undefined;

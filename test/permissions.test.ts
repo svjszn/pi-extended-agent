@@ -7,7 +7,7 @@ import test from "node:test";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 const { default: permissions } = await import(new URL("../dist/extensions/permissions.js", import.meta.url).href) as typeof import("../extensions/permissions.js");
-const { permissionDecision, permissionRequest, readPermissionMode, PERMISSIONS_ENTRY } = await import(new URL("../dist/lib/permissions.js", import.meta.url).href) as typeof import("../lib/permissions.js");
+const { permissionDecision, permissionRequest, readPermissionMode, normalizePermissionMode, isPermissionMode, PERMISSION_MODES, PERMISSIONS_ENTRY } = await import(new URL("../dist/lib/permissions.js", import.meta.url).href) as typeof import("../lib/permissions.js");
 const { createPermissionApprovalScreen } = await import(new URL("../dist/ui/permissions-screen.js", import.meta.url).href) as typeof import("../ui/permissions-screen.js");
 const { createUiTheme } = await import(new URL("../dist/ui/theme.js", import.meta.url).href) as typeof import("../ui/theme.js");
 const { createFooter } = await import(new URL("../dist/ui/chrome.js", import.meta.url).href) as typeof import("../ui/chrome.js");
@@ -39,31 +39,62 @@ function fixture(entries: {type: string; customType: string; data: unknown}[] = 
 }
 
 test("permissions allow only known built-in readers, never shell strings or unverified read-only hints", () => {
-  for (const name of ["read", "find", "grep", "ls"]) assert.equal(permissionDecision("read-only", name, tools), "allow");
+  for (const name of ["read", "find", "grep", "ls"]) assert.equal(permissionDecision("deny", name, tools), "allow");
   for (const name of ["edit", "write", "bash", "powershell", "mcp__fs__read", "codemode", "unknown"]) {
-    assert.equal(permissionDecision("read-only", name, tools), "block");
+    assert.equal(permissionDecision("deny", name, tools), "block");
     assert.equal(permissionDecision("ask", name, tools), "confirm");
-    assert.equal(permissionDecision("full", name, tools), "allow");
+    assert.equal(permissionDecision("allow", name, tools), "allow");
   }
   const shadow = [{ name: "read", sourceInfo: { source: "local", scope: "project" as const, origin: "top-level" as const, path: "/extension.js" }, annotations: { readOnlyHint: true } }];
-  assert.equal(permissionDecision("read-only", "read", shadow), "block");
+  assert.equal(permissionDecision("deny", "read", shadow), "block");
 });
 
 test("mode changes persist only session metadata, restore on resume, and reject invalid arguments", async () => {
   const f = fixture();
   assert.equal(await f.call("write"), undefined);
-  await f.set("read-only");
+  await f.set("deny");
   assert.equal((await f.call("write")).block, true);
   assert.equal(await f.call("read"), undefined);
-  assert.equal(readPermissionMode(f.stored), "read-only");
-  assert.deepEqual(f.stored[0], { type: "custom", customType: PERMISSIONS_ENTRY, data: { mode: "read-only" } });
+  assert.equal(readPermissionMode(f.stored), "deny");
+  assert.deepEqual(f.stored[0], { type: "custom", customType: PERMISSIONS_ENTRY, data: { mode: "deny" } });
   const resumed = fixture(f.stored);
   assert.equal((await resumed.call("bash")).block, true);
   await f.set("invalid");
   assert.equal(present(f.notices.at(-1)).type, "error");
   assert.equal(f.stored.length, 1);
-  assert.equal(readPermissionMode([]), "full");
+  assert.equal(readPermissionMode([]), "allow");
   assert.equal(fixture().stored.length, 0);
+});
+
+test("legacy session modes restore the same policy without rewriting history", async () => {
+  for (const [saved, expected] of [["full", "allow"], ["read-only", "deny"], ["allow", "allow"], ["ask", "ask"], ["deny", "deny"]] as const) {
+    const entries = [{ type: "custom", customType: PERMISSIONS_ENTRY, data: { mode: saved } }];
+    const f = fixture(entries);
+    assert.equal(readPermissionMode(f.stored), expected);
+    assert.equal(normalizePermissionMode(saved), expected);
+    assert.equal(isPermissionMode(saved), PERMISSION_MODES.some(mode => mode === saved));
+    assert.equal((await f.call("write"))?.block ?? false, expected !== "allow");
+    assert.equal(await f.call("read"), undefined);
+    assert.deepEqual(f.stored, entries, "restoring does not rewrite the legacy marker");
+    assert.deepEqual(f.bus.at(-1)?.data, { mode: expected });
+  }
+  const entries = ["deny", "full", "read-only", "invalid"].map(mode => ({ type: "custom", customType: PERMISSIONS_ENTRY, data: { mode } }));
+  assert.equal(readPermissionMode(entries), "deny", "the latest valid legacy marker wins over older canonical markers");
+  entries.push({ type: "custom", customType: PERMISSIONS_ENTRY, data: { mode: "ask" } });
+  assert.equal(readPermissionMode(entries), "ask");
+  for (const invalid of [undefined, null, {}, "invalid"]) assert.equal(normalizePermissionMode(invalid), undefined);
+});
+
+test("commands offer canonical modes and save legacy aliases using their new names", async () => {
+  const f = fixture();
+  assert.deepEqual((await f.command.getArgumentCompletions?.(""))?.map(item => item.value), ["allow", "ask", "deny"]);
+  assert.deepEqual((await f.command.getArgumentCompletions?.("d"))?.map(item => item.value), ["deny"]);
+  for (const [command, expected] of [["read-only", "deny"], ["full", "allow"], [" ASK ", "ask"], ["DENY", "deny"], ["allow", "allow"]]) {
+    await f.set(command);
+    assert.deepEqual(f.stored.at(-1)?.data, { mode: expected });
+    assert.deepEqual(f.bus.at(-1)?.data, { mode: expected });
+    assert.equal((await f.call("write"))?.block ?? false, expected !== "allow");
+  }
 });
 
 test("a failed policy read blocks tools until permissions initialize successfully", async () => {
@@ -102,7 +133,7 @@ test("concurrent calls are approved in order and a mode change cancels stale app
   await new Promise(setImmediate); assert.equal(pending.length, 1);
   pending[0](true); assert.equal(await first, undefined);
   await new Promise(setImmediate); assert.equal(pending.length, 2);
-  await f.set("read-only");
+  await f.set("deny");
   assert.equal((await second).block, true);
   assert.equal((await f.call("write")).block, true);
 });
@@ -131,7 +162,7 @@ test("cancellation during lazy approval loading never opens a stale dialog", asy
     // approve() begins in the queue's first microtask; cancel while imports await.
     queueMicrotask(() => {
       if (cancel === "shutdown") f.handlers.get("session_shutdown")();
-      else if (cancel === "mode") void f.set("read-only");
+      else if (cancel === "mode") void f.set("deny");
       else controller.abort();
     });
     assert.equal((await task).block, true);
@@ -147,7 +178,7 @@ test("permissions selector keeps changes pending until Enter and uses the shared
       const tui = { children: [], terminal: { rows: 30 }, requestRender() {} };
       const panel = create(tui, createUiTheme(), {}, (value) => { result = value; });
       await panel.ready;
-      assert.match(measure.stripTerminalSequences(panel.render(100).join("\n")), /Full access.*current/);
+      assert.match(measure.stripTerminalSequences(panel.render(100).join("\n")), /Allow.*current/);
       panel.handleInput("\x1b[B");
       assert.equal(f.stored.length, 0);
       for (const [width, rows] of [[100, 30], [24, 12], [8, 8], [1, 4]]) {
@@ -158,7 +189,7 @@ test("permissions selector keeps changes pending until Enter and uses the shared
       panel.handleInput(cancel ? "\x1b" : "\r"); panel.dispose(); return result;
     };
     await present(f.command).handler("", f.ctx as unknown as ExtensionCommandContext);
-    assert.equal(readPermissionMode(f.stored), cancel ? "full" : "ask");
+    assert.equal(readPermissionMode(f.stored), cancel ? "allow" : "ask");
   }
 });
 
@@ -243,10 +274,10 @@ test("the actual approval dialog exposes command tails across bounded pages and 
 });
 
 test("footer reflects the permission mode and keeps context aligned", () => {
-  let mode = "full";
+  let mode = "allow";
   const footer = createFooter({}, {}, createUiTheme(), {}, measure,
     () => ({ tokens: 24000, contextWindow: 200000, percent: 12, source: "pi", afterCompaction: false }), () => mode as import("../lib/permissions.js").PermissionMode);
-  for (const [value, label] of [["full", "auto mode"], ["ask", "ask mode"], ["read-only", "read only"]]) {
+  for (const [value, label] of [["allow", "allow mode"], ["ask", "ask mode"], ["deny", "deny mode"]]) {
     mode = value;
     for (const width of [8, 24, 80]) assert.ok(footer.render(width).every((line) => measure.visibleWidth(line) <= width));
     assert.match(measure.stripTerminalSequences(footer.render(80).join("\n")), new RegExp(label));
@@ -279,20 +310,20 @@ test("real Pi tool execution enforces permissions before file writes, shell, and
   const call = (name: string, args: { path?: string; content?: string; oldText?: string; newText?: string; command?: string; }) => run.executeTool(name, args);
   const written = await call("write", { path: "sample.txt", content: "original" });
   assert.equal(written.isError, false, JSON.stringify(written));
-  await session.prompt("/permissions read-only");
+  await session.prompt("/permissions deny");
   const read = await call("read", { path: "sample.txt" });
   assert.equal(read.isError, false, JSON.stringify(read));
   assert.equal((await call("write", { path: "sample.txt", content: "changed" })).isError, true);
   assert.equal((await call("edit", { path: "sample.txt", oldText: "original", newText: "changed" })).isError, true);
   assert.equal(readFileSync(join(cwd, "sample.txt"), "utf8"), "original");
   const shell = await call("bash", { command: "echo blocked > marker.txt" });
-  assert.equal(shell.isError, true); assert.match(JSON.stringify(shell), /blocked in Read only/);
+  assert.equal(shell.isError, true); assert.match(JSON.stringify(shell), /blocked in Deny/);
   const powerShell = await call("powershell", { command: "Set-Content marker.txt blocked" });
-  assert.equal(powerShell.isError, true); assert.match(JSON.stringify(powerShell), /blocked in Read only/);
+  assert.equal(powerShell.isError, true); assert.match(JSON.stringify(powerShell), /blocked in Deny/);
   assert.equal(existsSync(join(cwd, "marker.txt")), false);
   await session.prompt("/permissions ask");
   assert.equal((await call("write", { path: "sample.txt", content: "changed" })).isError, true);
-  await session.prompt("/permissions full");
+  await session.prompt("/permissions allow");
   assert.equal((await call("write", { path: "sample.txt", content: "allowed" })).isError, false);
   assert.equal(readFileSync(join(cwd, "sample.txt"), "utf8"), "allowed");
 });

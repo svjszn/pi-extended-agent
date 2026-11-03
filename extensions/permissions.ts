@@ -2,7 +2,7 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { PERMISSION_MODES, PERMISSION_LABELS, PERMISSION_DESCRIPTIONS, PERMISSIONS_ENTRY, PERMISSIONS_CHANGED,
-  isPermissionMode, readPermissionMode, permissionDecision, permissionRequest } from "../lib/permissions.js";
+  normalizePermissionMode, readPermissionMode, permissionDecision, permissionRequest } from "../lib/permissions.js";
 import type { PermissionMode } from "../lib/permissions.js";
 import { isWorkspaceBookkeeping, isDelegationTool, isUserQuestionTool } from "../lib/workspace-tools.js";
 import { serializeApproval } from "../lib/approval-queue.js";
@@ -10,7 +10,7 @@ import { PLAN_ENTRY, isPlanning, canPlanRead } from "../lib/plan.js";
 import type { Plan } from "../lib/plan.js";
 
 export default function permissions(pi: ExtensionAPI) {
-  let mode: PermissionMode = "full";
+  let mode: PermissionMode = "allow";
   let initialized = false;
   let lifetime = new AbortController();
   let changes = new AbortController();
@@ -68,7 +68,7 @@ export default function permissions(pi: ExtensionAPI) {
       return { block: true, terminate: true, reason: `Plan mode: ${event.toolName} is blocked until /plan execute.` };
     }
     const decision = asking || isWorkspaceBookkeeping(event.toolName, event.input, tools) ? "allow"
-      : delegating && mode === "read-only" ? "allow" : permissionDecision(mode, event.toolName, tools);
+      : delegating && mode === "deny" ? "allow" : permissionDecision(mode, event.toolName, tools);
     if (decision === "allow" && !signal.aborted) return;
     const blocked = (reason: string) => ({ block: true, terminate: true, reason });
     if (decision === "block" || signal.aborted) return blocked(`Permissions: ${event.toolName} is blocked in ${PERMISSION_LABELS[mode]} mode.`);
@@ -80,13 +80,13 @@ export default function permissions(pi: ExtensionAPI) {
     return granted && !signal.aborted ? undefined : blocked(`Permission was not granted for ${event.toolName}.`);
   });
   pi.on("before_agent_start", (event) => {
-    if (mode === "full") return;
-    const text = `Agent permissions: ${PERMISSION_DESCRIPTIONS[mode]}${mode === "read-only" ? " Do not attempt to bypass blocked tools through another tool." : " Permission is granted for each action separately."}`;
+    if (mode === "allow") return;
+    const text = `Agent permissions: ${PERMISSION_DESCRIPTIONS[mode]}${mode === "deny" ? " Do not attempt to bypass blocked tools through another tool." : " Permission is granted for each action separately."}`;
     if (event.systemPromptOptions?.forceSystemPrompt !== undefined || !event.systemPromptOptions) return { systemPrompt: `${event.systemPrompt}\n\n${text}` };
     event.systemPromptOptions.sections.pi_extended_permissions = text;
   });
   pi.registerCommand("permissions", {
-    description: "Choose full access, approval prompts, or read-only agent tools",
+    description: "Choose allow, ask, or deny for agent tool permissions",
     getArgumentCompletions: (prefix) => PERMISSION_MODES.filter((value) => value.startsWith(prefix.trim().toLowerCase()))
       .map((value) => ({ value, label: PERMISSION_LABELS[value] })),
     handler: async (args, ctx) => {
@@ -95,8 +95,9 @@ export default function permissions(pi: ExtensionAPI) {
       };
       const value = args.trim().toLowerCase();
       if (value) {
-        if (!isPermissionMode(value)) { notify(`Available modes: ${PERMISSION_MODES.join(", ")}.`, "error"); return; }
-        apply(value); notify(`Permissions: ${PERMISSION_LABELS[mode]}`); return;
+        const selected = normalizePermissionMode(value);
+        if (!selected) { notify(`Available modes: ${PERMISSION_MODES.join(", ")}.`, "error"); return; }
+        apply(selected); notify(`Permissions: ${PERMISSION_LABELS[mode]}`); return;
       }
       if (ctx.mode !== "tui") {
         notify(`Permissions: ${PERMISSION_LABELS[mode]}\n${PERMISSION_DESCRIPTIONS[mode]}\nAvailable: ${PERMISSION_MODES.join(", ")}`); return;

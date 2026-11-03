@@ -47,7 +47,7 @@ type CallHandler = (event: ToolCallEvent) => Promise<ToolCallEventResult | void>
 function guard(request: Partial<SubagentRequest>, { tools = builtin, onAllowed = () => {} } = {}) {
   const state: GuardState = { toolCalls: 0, blocked: [] };
   let start!: StartHandler, call!: CallHandler;
-  const inline = createSubagentGuard({ definition, task: "t", cwd: ".", agentDir: ".", mode: "full", planning: false, ...request }, state, onAllowed);
+  const inline = createSubagentGuard({ definition, task: "t", cwd: ".", agentDir: ".", mode: "allow", planning: false, ...request }, state, onAllowed);
   assert.ok(typeof inline !== "function");
   inline.factory({
     on(name: string, handler: unknown) {
@@ -194,8 +194,8 @@ test("agents are saved, replaced and deleted per scope", (t) => {
   assert.throws(() => store.save("global", { ...definition, name: "../escape" }), /agent name/);
 });
 
-test("read-only mode blocks every subagent mutation without asking", async () => {
-  const run = guard({ mode: "read-only", requestApproval: () => assert.fail("read-only must not ask") });
+test("deny mode blocks every subagent mutation without asking", async () => {
+  const run = guard({ mode: "deny", requestApproval: () => assert.fail("deny must not ask") });
   for (const tool of ["read", "grep", "find", "ls"]) assert.equal(await run.call(tool), undefined);
   for (const tool of ["write", "edit", "bash"]) {
     const result = await run.call(tool, { path: "a" });
@@ -209,7 +209,7 @@ test("read-only mode blocks every subagent mutation without asking", async () =>
 });
 
 test("plan mode lets a subagent research and blocks everything else", async () => {
-  const run = guard({ mode: "full", planning: true, requestApproval: () => assert.fail("plan mode must not ask") });
+  const run = guard({ mode: "allow", planning: true, requestApproval: () => assert.fail("plan mode must not ask") });
   for (const tool of ["read", "grep", "find", "ls"]) assert.equal(await run.call(tool), undefined);
   for (const tool of ["write", "edit", "bash"]) {
     assert.match((await run.call(tool))!.reason!, /Plan mode.*research only/);
@@ -242,12 +242,12 @@ test("a subagent cannot act when approval is impossible or the run is cancelled"
   assert.match((await thrown.call("write"))!.reason!, /Permission was not granted/);
   const controller = new AbortController();
   controller.abort();
-  const cancelled = guard({ mode: "full", signal: controller.signal });
+  const cancelled = guard({ mode: "allow", signal: controller.signal });
   assert.match((await cancelled.call("read"))!.reason!, /cancelled/);
 });
 
 test("the subagent tool budget is bounded", async () => {
-  const run = guard({ mode: "full", maxToolCalls: 2 });
+  const run = guard({ mode: "allow", maxToolCalls: 2 });
   assert.equal(await run.call("read"), undefined);
   assert.equal(await run.call("read"), undefined);
   assert.match((await run.call("read"))!.reason!, /budget of 2 calls/);
@@ -272,7 +272,7 @@ test("cancellation triggered while reporting an admitted call still blocks tool 
 });
 
 test("the guard tells the subagent its report is the only output", async () => {
-  const run = guard({ mode: "full" });
+  const run = guard({ mode: "allow" });
   const event = { systemPrompt: "Native", systemPromptOptions: { sections: {} as Record<string, string> } } as BeforeAgentStartEvent;
   run.start(event);
   assert.match(event.systemPromptOptions!.sections.pi_extended_subagent, /Report back in your final message/);
@@ -374,7 +374,7 @@ test("a real subagent run carries the agent's instructions, reports back, and le
   const result = await runSubagent({
     definition: { ...definition, scope: "global", filePath: "x", prompt: "AGENT_RULE: always answer with Findings." },
     task: "SUBAGENT_TASK: inspect the module", cwd: root.cwd, agentDir: root.agentDir,
-    mode: "full", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory(),
+    mode: "allow", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory(),
   });
   assert.equal(result.report, "Findings: the module is unused.");
   assert.equal(result.aborted, false);
@@ -399,7 +399,7 @@ test("subagent progress follows real SDK tool events without exposing arguments,
   ]);
   const progress: { note: string; details?: SubagentProgress }[] = [];
   const result = await runSubagent({ definition: { ...definition, tools: ["read"] }, task: "private-task-sentinel",
-    cwd: root.cwd, agentDir: root.agentDir, mode: "full", planning: false, modelRuntime: runtime, model,
+    cwd: root.cwd, agentDir: root.agentDir, mode: "allow", planning: false, modelRuntime: runtime, model,
     settingsManager: SettingsManager.inMemory(), onProgress: (note, details) => { progress.push({ note, details }); } });
   assert.equal(result.toolCalls, 1);
   assert.equal(result.report, "private-report-sentinel");
@@ -415,8 +415,8 @@ test("bundled agents run with their own instructions and tool limits while inher
   const { runtime, seen, model } = await fixtureRuntime(t);
   for (const name of ["scout", "lens"]) {
     const agent = store.find(name)!;
-    for (const restrictions of [{ mode: "full" as const, planning: false },
-      { mode: "read-only" as const, planning: false }, { mode: "full" as const, planning: true }]) {
+    for (const restrictions of [{ mode: "allow" as const, planning: false },
+      { mode: "deny" as const, planning: false }, { mode: "allow" as const, planning: true }]) {
       const before = seen.length;
       const result = await runSubagent({ definition: agent, task: "Inspect the requested code and report findings.",
         cwd: root.cwd, agentDir: root.agentDir, modelRuntime: runtime, model,
@@ -424,7 +424,7 @@ test("bundled agents run with their own instructions and tool limits while inher
       assert.equal(result.aborted, false);
       assert.equal(result.model, model.id);
       assert.equal(result.report, "Findings: the module is unused.");
-      const expected = restrictions.planning || restrictions.mode === "read-only"
+      const expected = restrictions.planning || restrictions.mode === "deny"
         ? ["read", "find", "grep", "ls"] : agent.tools!;
       assert.deepEqual(declaredTools(seen[before]).sort(), [...expected].sort());
       const system = JSON.stringify(seen[before].messages.find((message) => message.role === "system"));
@@ -466,7 +466,7 @@ test("saving and editing a no-tools agent never restores the engine defaults", a
   assert.deepEqual(edited.tools, []);
   const { runtime, seen, model } = await fixtureRuntime(t);
   await runSubagent({ definition: edited, task: "Report only", cwd: root.cwd, agentDir: root.agentDir,
-    mode: "full", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory() });
+    mode: "allow", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory() });
   assert.deepEqual(declaredTools(seen[0]), []);
 });
 
@@ -509,7 +509,7 @@ test("a resolved Pi prompt with a provider error fails the subagent instead of r
   const { runtime, seen, model } = await fixtureRuntime(t, "", [{ stopReason: "error", text: "I will investigate", errorMessage: "Fixture provider rejected the request" }]);
   const settings = SettingsManager.inMemory({ retry: { enabled: false } });
   await assert.rejects(runSubagent({ definition, task: "Inspect", cwd: root.cwd, agentDir: root.agentDir,
-    mode: "full", planning: false, modelRuntime: runtime, model, settingsManager: settings,
+    mode: "allow", planning: false, modelRuntime: runtime, model, settingsManager: settings,
   }), /Subagent researcher failed: Fixture provider rejected the request/);
   assert.equal(seen.length, 1);
   assert.equal(existsSync(join(root.agentDir, "sessions")), false);
@@ -519,7 +519,7 @@ test("a provider-side abort without an external abort signal is reported as canc
   const root = paths(t); profile(t, root);
   const { runtime, model } = await fixtureRuntime(t, "", [{ stopReason: "aborted", text: "Partial response" }]);
   const result = await runSubagent({ definition, task: "Inspect", cwd: root.cwd, agentDir: root.agentDir,
-    mode: "full", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory(),
+    mode: "allow", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory(),
   });
   assert.equal(result.aborted, true);
   assert.equal(result.report, "");
@@ -532,7 +532,7 @@ test("a provider error recovered by Pi retries still returns the final successfu
     { stopReason: "stop", text: "Recovered findings" },
   ]);
   const result = await runSubagent({ definition, task: "Inspect", cwd: root.cwd, agentDir: root.agentDir,
-    mode: "full", planning: false, modelRuntime: runtime, model,
+    mode: "allow", planning: false, modelRuntime: runtime, model,
     settingsManager: SettingsManager.inMemory({ retry: { enabled: true, maxRetries: 1, baseDelayMs: 1, maxAgentDelayMs: 2 } }),
   });
   assert.equal(seen.length, 2);
@@ -545,13 +545,13 @@ test("cancellation before prompting never sends a provider request", async (t) =
   const { runtime, seen, model } = await fixtureRuntime(t);
   const controller = new AbortController();
   const result = await runSubagent({ definition, task: "Do not run", cwd: root.cwd, agentDir: root.agentDir,
-    mode: "full", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory(),
+    mode: "allow", planning: false, modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory(),
     signal: controller.signal, onProgress: () => controller.abort(),
   });
   assert.equal(result.aborted, true);
   assert.equal(seen.length, 0);
   const preAborted = await runSubagent({ definition, task: "Do not initialize", cwd: root.cwd, agentDir: root.agentDir,
-    mode: "full", planning: false, signal: controller.signal,
+    mode: "allow", planning: false, signal: controller.signal,
   });
   assert.equal(preAborted.aborted, true);
   assert.equal(existsSync(join(root.agentDir, "sessions")), false);
@@ -563,16 +563,16 @@ test("restricted modes narrow what the subagent is actually offered, never wider
   const { runtime, seen, model } = await fixtureRuntime(t);
   const run = (overrides: Partial<SubagentRequest>, tools: string[] | undefined) => runSubagent({
     definition: { ...definition, scope: "global", filePath: "x", ...(tools !== undefined ? { tools } : {}) },
-    task: "t", cwd: root.cwd, agentDir: root.agentDir, mode: "full", planning: false,
+    task: "t", cwd: root.cwd, agentDir: root.agentDir, mode: "allow", planning: false,
     modelRuntime: runtime, model, settingsManager: SettingsManager.inMemory(), ...overrides,
   });
   const selections: [Partial<SubagentRequest>, string[] | undefined, string[]][] = [
     [{}, ["read", "bash"], ["read", "bash"]],
     [{ planning: true }, undefined, ["read", "find", "grep", "ls"]],
-    [{ mode: "read-only" }, undefined, ["read", "find", "grep", "ls"]],
+    [{ mode: "deny" }, undefined, ["read", "find", "grep", "ls"]],
     [{ planning: true }, ["read"], ["read"]],
     // A definition that only asks for mutating tools is offered nothing at all.
-    [{ mode: "read-only" }, ["bash", "write"], []],
+    [{ mode: "deny" }, ["bash", "write"], []],
   ];
   for (const [overrides, tools, expected] of selections) {
     const before = seen.length;

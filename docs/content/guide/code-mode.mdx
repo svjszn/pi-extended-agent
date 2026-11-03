@@ -30,7 +30,7 @@ guarantee that a task finishes faster.
 
 Pi runs scripts in a QuickJS sandbox without Node, filesystem, or network APIs.
 Scripts reach those capabilities through the registered tools. Nested calls
-pass through the same permission and planning checks as direct calls. Read only
+pass through the same permission and planning checks as direct calls. Deny
 blocks the outer `codemode` tool; ordinary reading tools remain available.
 
 ## Session behavior

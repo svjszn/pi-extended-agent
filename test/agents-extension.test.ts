@@ -74,7 +74,7 @@ async function parentFixture(t: TestContext, beforeReply?: (index: number) => Pr
 
 test("manual reports reach the native parent context, produce normal replies, and survive resume with barriers intact", async t => {
   const { session, seen, requests } = await parentFixture(t);
-  await session.prompt("/permissions read-only");
+  await session.prompt("/permissions deny");
   await session.prompt("/plan start");
   await session.prompt("/lens");
   // A one-shot command must wait for the parent's reply before returning.
@@ -82,9 +82,9 @@ test("manual reports reach the native parent context, produce normal replies, an
   assert.match(seen[0], /MAIN_CONTEXT_SENTINEL/);
   assert.match(seen[0], /HANDOFF_FINDING/);
   assert.match(seen[0], /caller behavior/);
-  assert.equal(requests[0].mode, "read-only"); assert.equal(requests[0].planning, true);
+  assert.equal(requests[0].mode, "deny"); assert.equal(requests[0].planning, true);
   const entries = session.sessionManager.getEntries();
-  assert.equal(readPermissionMode(entries), "read-only");
+  assert.equal(readPermissionMode(entries), "deny");
   const plan = entries.filter(entry => entry.type === "custom" && entry.customType === PLAN_ENTRY).at(-1);
   assert.equal((plan as { data?: { status: string } })?.data?.status, "planning");
   const reports = entries.filter(entry => entry.type === "custom_message" && entry.customType === SUBAGENT_REPORT_TYPE);
@@ -339,13 +339,13 @@ test("reports are never handed to a different session or after a cancelled polic
     });
     const running = host.shortcut("lens"); await started;
     if (reason === "session") host.setSessionId("replacement-session");
-    else host.events.emit(PERMISSIONS_CHANGED, { mode: "read-only" });
+    else host.events.emit(PERMISSIONS_CHANGED, { mode: "deny" });
     finish(); await running;
     assert.equal(host.handoffs.length, 0);
   });
 });
 
-test("direct commands use current overrides and pass the session's permission and planning limits", async (t) => {
+test("direct commands use current overrides and inherit legacy permissions and planning limits", async (t) => {
   const requests: SubagentRequest[] = [];
   const host = fixture(t, async (request) => {
     requests.push(request); return { ...cancelled, aborted: false, report: "Findings" };
@@ -360,7 +360,7 @@ test("direct commands use current overrides and pass the session's permission an
   assert.deepEqual(requests.map((request) => request.definition.scope), ["global", "project"]);
   assert.deepEqual(requests.map((request) => request.definition.tools), [[], ["read"]]);
   assert.deepEqual(requests.map((request) => request.definition.prompt), ["Personal scout", "Project reviewer"]);
-  assert.ok(requests.every((request) => request.mode === "read-only" && request.planning && request.thinkingLevel === "high"));
+  assert.ok(requests.every((request) => request.mode === "deny" && request.planning && request.thinkingLevel === "high"));
 });
 
 test("a permission or planning change revokes an active subagent and releases policy listeners", async (t) => {
@@ -375,8 +375,8 @@ test("a permission or planning change revokes an active subagent and releases po
         return cancelled;
       });
       const pending = host.run(); await ready;
-      host.entries.push({ type: "custom", customType: PERMISSIONS_ENTRY, data: { mode: "read-only" } });
-      host.events.emit(event, event === PERMISSIONS_CHANGED ? { mode: "read-only" } : { planning: true });
+      host.entries.push({ type: "custom", customType: PERMISSIONS_ENTRY, data: { mode: "deny" } });
+      host.events.emit(event, event === PERMISSIONS_CHANGED ? { mode: "deny" } : { planning: true });
       assert.equal(request.signal!.aborted, true);
       await pending;
       assert.ok(host.notices.some((text) => /cancelled/.test(text)));

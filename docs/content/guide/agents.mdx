@@ -59,7 +59,7 @@ there are no actionable findings or when verification is incomplete.
 
 Lens is instructed to use shell commands only for read-only Git inspection and
 to leave changes and test execution to the parent. Shell calls still use the
-current permission checks. In Read only or Plan mode, shell access is blocked;
+current permission checks. In Deny or Plan mode, shell access is blocked;
 provide a diff or explicit files to review with the available readers. Lens must
 report any review scope it cannot establish.
 
@@ -115,9 +115,9 @@ It runs the same checks your own tool calls do:
 
 | Mode | Subagent behavior |
 | :--- | :--- |
-| Full access | Runs with its own tool selection, without prompts |
-| Ask before actions | Each change, shell command, and external tool needs your approval |
-| Read only | Offered only the built-in read, find, grep, and ls tools |
+| Allow | Runs with its own tool selection, without prompts |
+| Ask | Each change, shell command, and external tool needs your approval |
+| Deny | Offered only the built-in read, find, grep, and ls tools |
 | Plan mode | Research only, until you run `/plan execute` |
 
 In Ask mode the approval dialog names the subagent and offers **Deny**, **Allow
@@ -126,7 +126,7 @@ choice is never preselected: it covers the rest of that single subagent run and
 nothing else. One dialog appears at a time, whether the request comes from your
 own tool calls or from a subagent.
 
-In Read only and Plan mode the selection is narrowed before the run starts, and
+In Deny and Plan mode the selection is narrowed before the run starts, and
 never beyond what the definition lists: an agent that asks only for `bash` is
 offered nothing in those modes.
 

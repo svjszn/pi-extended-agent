@@ -70,7 +70,7 @@ test("the live footer updates on code-mode changes and releases its subscription
   host.emit(CODE_MODE_CHANGED, { enabled: true });
   assert.match(host.footer().render(80).join(""), /38;2;177;185;249mcode mode/);
   host.emit(CODE_MODE_CHANGED, { enabled: false });
-  assert.match(host.footer().render(80).join(""), /auto mode/);
+  assert.match(host.footer().render(80).join(""), /allow mode/);
   host.shutdown("quit");
   host.emit(CODE_MODE_CHANGED, { enabled: true });
   assert.doesNotMatch(host.footer().render(80).join(""), /code mode/);

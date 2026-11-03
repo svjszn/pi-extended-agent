@@ -50,7 +50,7 @@ export class PlanStore {
 }
 export function isPlanning(plan?: Plan) { return plan?.status === "planning" || plan?.status === "ready"; }
 export function canPlanRead(name: string, tools: readonly Pick<ToolInfo, "name" | "sourceInfo">[]) {
-  return permissionDecision("read-only", name, tools) === "allow";
+  return permissionDecision("deny", name, tools) === "allow";
 }
 export function renderPlan(plan: Plan) {
   const marks = { pending: " ", in_progress: "~", completed: "x" };

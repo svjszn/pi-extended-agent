@@ -214,9 +214,9 @@ test("an unauthenticated start shows one plain notice, without effort, context, 
   assert.doesNotMatch(rendered, /off effort/);
   assert.equal(rendered.match(/No models available/g)!.length, 1);
   // The footer drops the context readout when there is no window to report.
-  const footer = createFooter({}, {}, createUiTheme(), {}, measure, () => undefined, () => "full");
+  const footer = createFooter({}, {}, createUiTheme(), {}, measure, () => undefined, () => "allow");
   assert.doesNotMatch(measure.stripTerminalSequences(footer.render(80).join("\n")), /context/);
-  assert.match(measure.stripTerminalSequences(footer.render(80).join("\n")), /auto mode/);
+  assert.match(measure.stripTerminalSequences(footer.render(80).join("\n")), /allow mode/);
   // The input corner keeps no row for an effort level that does not exist.
   class Base {
     focused = false;

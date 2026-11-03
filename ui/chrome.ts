@@ -133,9 +133,9 @@ export function createFooter(_ctx: unknown, _tui: unknown, theme: Palette, _foot
       if (width < 1) return [];
       const planning = getPlanning?.() === true;
       const codeMode = getCodeMode?.() === true;
-      const permissions = getPermissions?.() ?? "full";
+      const permissions = getPermissions?.() ?? "allow";
       const modeLabel = planning ? "plan mode" : codeMode ? "code mode" : permissionFooter(permissions);
-      const modeColor = planning ? "effortMedium" : codeMode ? "effortHigh" : permissions === "full" ? "effortLow" : "dim";
+      const modeColor = planning ? "effortMedium" : codeMode ? "effortHigh" : permissions === "allow" ? "effortLow" : "dim";
       const left = `  ${palette.fg(modeColor, modeLabel)}`;
       const usage = getContext?.();
       if (!usage) return [truncateToWidth(left, width)];

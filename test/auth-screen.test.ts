@@ -33,7 +33,7 @@ function fixture() {
   host.editor = editor;
   host.editorContainer = editorContainer;
   host.ui = { mode: "fullscreen", setFocus() {}, requestRender() {}, terminal: { rows: 24 } };
-  host.footerContainer = { render: () => ["  auto mode"] };
+  host.footerContainer = { render: () => ["  allow mode"] };
   host.showStatus = (message: string) => state.messages.push(message);
   host.showError = (message: string|undefined) => { throw new Error(message); };
   host.updateAvailableProviderCount = async () => {};

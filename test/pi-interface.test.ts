@@ -207,10 +207,10 @@ test("resizing the same viewport recalculates space above the conversation", () 
   assert.equal(smaller.findIndex((line: string) => line.trim() === "hello"), 10);
 });
 
-test("footer shows auto mode at the left without the working folder or branch", () => {
+test("footer shows allow mode at the left without the working folder or branch", () => {
   const view = scene(80, 24, []);
-  assert.equal(stripTerminalSequences(view.footer.render(80)[0]), "  auto mode");
-  assert.equal(view.render().at(-1)!.trim(), "auto mode");
+  assert.equal(stripTerminalSequences(view.footer.render(80)[0]), "  allow mode");
+  assert.equal(view.render().at(-1)!.trim(), "allow mode");
   view.footer.dispose();
 });
 

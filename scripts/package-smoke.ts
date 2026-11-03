@@ -115,8 +115,8 @@ try {
   await resumed.prompt("/agents delete release-agent");
   assert.equal(agentStore.find("release-agent"), undefined);
   await resumed.prompt("/plan cancel");
-  await resumed.prompt("/permissions read-only");
-  assert.ok(reopened.getEntries().some((entry) => entry.type === "custom" && entry.customType === "pi-extended-permissions" && (entry.data as {mode?:string}).mode === "read-only"));
+  await resumed.prompt("/permissions deny");
+  assert.ok(reopened.getEntries().some((entry) => entry.type === "custom" && entry.customType === "pi-extended-permissions" && (entry.data as {mode?:string}).mode === "deny"));
   assert.equal(readFileSync(join(cwd, "sample.txt"), "utf8"), "original");
   console.log("Installed package: commands, agents, code mode, memory, plan barrier, compaction and disk resume passed.");
 } finally { session.dispose(); resumed?.dispose(); }

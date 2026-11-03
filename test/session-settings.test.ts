@@ -73,7 +73,7 @@ async function attemptWrite(session: AgentSession, path: string) {
 }
 
 test("clearing preserves permissions before session_start and keeps actual writes gated through reload and resume", async t => {
-  for (const persisted of [false, true]) for (const mode of ["ask", "read-only"]) for (const command of ["/new", "/clear"] as const) {
+  for (const persisted of [false, true]) for (const mode of ["ask", "deny"]) for (const command of ["/new", "/clear"] as const) {
     await t.test(`${persisted ? "disk" : "memory"} ${mode} ${command}`, async t => {
       const f = await fixture(t, persisted, true);
       await f.runtime.session.prompt(`/permissions ${mode}`);
@@ -92,7 +92,7 @@ test("clearing preserves permissions before session_start and keeps actual write
         manager.appendMessage(assistantFixture([{ type: "text", text: "Fixture" }]));
         const file = present(manager.getSessionFile());
         await f.runtime.newSession();
-        assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "full", "unrelated sessions retain their documented default");
+        assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "allow", "unrelated sessions retain their documented default");
         await f.runtime.switchSession(file);
         assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), mode);
         assert.equal((await attemptWrite(f.runtime.session, "resumed.txt")).isError, true);
@@ -102,9 +102,31 @@ test("clearing preserves permissions before session_start and keeps actual write
   }
 });
 
+test("legacy read-only sessions retain Deny through reload, resume and clearing", async t => {
+  const f = await fixture(t, true, true);
+  const manager = f.runtime.session.sessionManager;
+  manager.appendCustomEntry(PERMISSIONS_ENTRY, { mode: "read-only" });
+  manager.appendMessage({ role: "user", content: "Legacy fixture conversation", timestamp: Date.now() });
+  manager.appendMessage(assistantFixture([{ type: "text", text: "Fixture" }]));
+  const file = present(manager.getSessionFile());
+  await f.runtime.session.reload();
+  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "deny");
+  assert.equal((await attemptWrite(f.runtime.session, "legacy-reload.txt")).isError, true);
+  await f.runtime.newSession();
+  await f.runtime.switchSession(file);
+  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "deny");
+  assert.equal((await attemptWrite(f.runtime.session, "legacy-resume.txt")).isError, true);
+  assert.deepEqual(manager.getEntries().flatMap(entry => entry.type === "custom" && entry.customType === PERMISSIONS_ENTRY ? [entry.data] : []), [{ mode: "read-only" }]);
+  await f.clear("/clear");
+  assert.equal(f.initialPermissions.at(-1), "deny");
+  assert.equal((await attemptWrite(f.runtime.session, "legacy-clear.txt")).isError, true);
+  assert.deepEqual(f.runtime.session.sessionManager.getEntries().flatMap(entry => entry.type === "custom" && entry.customType === PERMISSIONS_ENTRY ? [entry.data] : []), [{ mode: "deny" }]);
+  assert.deepEqual(f.errors, []);
+});
+
 test("a failed inherited-policy write leaves the replacement unable to run tools", async t => {
   const f = await fixture(t, false, true);
-  await f.runtime.session.prompt("/permissions read-only");
+  await f.runtime.session.prompt("/permissions deny");
   const oldId = f.runtime.session.sessionId;
   const original = SessionManager.prototype.appendCustomEntry;
   const failing = t.mock.method(SessionManager.prototype, "appendCustomEntry", function (this: SessionManager, type: string, data: unknown) {
@@ -163,14 +185,14 @@ test("cancelled and failed replacements do not leak preferences into a later unr
   const f = await fixture(t);
   await f.runtime.session.setModel(present(f.models.getModel("session-fixture", "selected")));
   f.runtime.session.setThinkingLevel("high"); await f.runtime.session.prompt("/mode code");
-  await f.runtime.session.prompt("/permissions read-only");
+  await f.runtime.session.prompt("/permissions deny");
   const oldId = f.runtime.session.sessionId;
   f.cancel(); await f.clear("/clear");
   assert.equal(f.runtime.session.sessionId, oldId); assert.equal(f.runtime.session.thinkingLevel, "high");
-  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "read-only");
+  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "deny");
   await f.runtime.newSession();
   assert.equal(f.runtime.session.model?.id, "default"); assert.equal(f.runtime.session.thinkingLevel, "low");
-  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "full");
+  assert.equal(readPermissionMode(f.runtime.session.sessionManager.getEntries()), "allow");
   assert.equal(f.runtime.session.sessionManager.getEntries().some((entry) => entry.type === "custom" && entry.customType === SESSION_PREFERENCES_ENTRY), false);
   await f.runtime.session.setModel(present(f.models.getModel("session-fixture", "selected")));
   f.runtime.session.setThinkingLevel("high"); await f.runtime.session.prompt("/mode code");

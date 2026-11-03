@@ -162,7 +162,7 @@ test("low/auto and medium/plan share their colors across dark and light themes",
   const before = getAppearance(); t.after(() => setAppearance(before));
   let planning = false;
   const theme = createUiTheme();
-  const footer = createFooter({}, {}, theme, {}, measure, undefined, () => "full", () => planning);
+  const footer = createFooter({}, {}, theme, {}, measure, undefined, () => "allow", () => planning);
   for (const mode of ["dark", "light"] as const) {
     setAppearance({ mode, color: "default" });
     assert.match(theme.fg("effortLow", "low"), /38;2;255;193;7mlow/);
@@ -174,7 +174,7 @@ test("low/auto and medium/plan share their colors across dark and light themes",
     assert.ok(present(labels).includes(theme.fg("effortLow", "low")));
     assert.ok(present(labels).includes(theme.fg("effortMedium", "medium")));
     planning = false;
-    assert.ok(footer.render(80)[0].includes(theme.fg("effortLow", "auto mode")));
+    assert.ok(footer.render(80)[0].includes(theme.fg("effortLow", "allow mode")));
     planning = true;
     assert.ok(footer.render(80)[0].includes(theme.fg("effortMedium", "plan mode")));
     panel.dispose();

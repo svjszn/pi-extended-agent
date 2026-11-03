@@ -70,7 +70,7 @@ async function fixture(t: TestContext, excludeTools?: string[], initiallyActive 
       extensionFactories: [codeModeBuiltin(createCodemodeExtension), (pi) => {
         toggle = () => pi.events.emit(PLAN_TOGGLE, undefined);
         pi.registerTool({ name: "revoke_access", label: "Revoke access", description: "Fixture only", parameters: { type: "object", properties: {} },
-          async execute() { await current.prompt("/permissions read-only"); return { content: [{ type: "text", text: "Permissions changed" }], details: {} }; },
+          async execute() { await current.prompt("/permissions deny"); return { content: [{ type: "text", text: "Permissions changed" }], details: {} }; },
         });
       }],
     });
@@ -108,7 +108,7 @@ test("code mode enables the engine's on variant, retains direct tools, and runs 
   assert.equal(f.mode().enabled, true);
   for (const name of before) assert.ok(f.session.getActiveToolNames().includes(name));
   assert.ok(f.session.systemPrompt.includes("read"), "on mode preserves native direct-tool instructions");
-  assert.equal(readPermissionMode(f.session.sessionManager.getEntries()), "full");
+  assert.equal(readPermissionMode(f.session.sessionManager.getEntries()), "allow");
   writeFileSync(join(f.cwd, "a.txt"), "alpha"); writeFileSync(join(f.cwd, "b.txt"), "beta");
   const result = await f.runCode('const results = await Promise.allSettled([tools.read({path:"a.txt"}), tools.read({path:"b.txt"})]); text(results.map(r => r.status === "fulfilled" ? r.value : "failed"));');
   assert.equal(result.isError, false, JSON.stringify(result));
@@ -161,7 +161,7 @@ test("nested codemode calls still obey a permission change during the script", a
   assert.equal(result.isError, true, JSON.stringify(result));
   assert.equal(readFileSync(join(f.cwd, "safe.txt"), "utf8"), "original");
   assert.match(JSON.stringify(result.result.content), /Permissions|blocked/);
-  assert.equal(readPermissionMode(f.session.sessionManager.getEntries()), "read-only");
+  assert.equal(readPermissionMode(f.session.sessionManager.getEntries()), "deny");
   const blocked = await f.runCode('await tools.write({path:"other.txt",content:"blocked"});');
   assert.equal(blocked.isError, true); assert.equal(existsSync(join(f.cwd, "other.txt")), false);
 });
@@ -226,7 +226,7 @@ test("the code mode footer uses the exact high-effort blue and remains bounded",
   const previous = getAppearance(); t.after(() => setAppearance(previous));
   for (const mode of ["dark", "light"] as const) {
     setAppearance({ mode, color: "green" });
-    const footer = createFooter({}, {}, createUiTheme(), {}, measure, undefined, () => "full", () => false, () => true);
+    const footer = createFooter({}, {}, createUiTheme(), {}, measure, undefined, () => "allow", () => false, () => true);
     assert.equal(measure.stripTerminalSequences(footer.render(80)[0]), "  code mode");
     assert.match(footer.render(80)[0], /38;2;177;185;249mcode mode/);
     for (const width of [1, 8, 24, 80]) assert.ok(footer.render(width).every((line) => measure.visibleWidth(line) <= width));

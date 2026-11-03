@@ -39,7 +39,7 @@ function fixture({ scoped = [], refresh, engine = api }: { scoped?: {model: Fixt
     async setModel(model: FixtureModel, options: { persist: boolean }) { this.model = model; state.selected.push({ model, persist: options.persist }); },
   } };
   host.ui = { requestRender() {}, terminal: { rows: 30 } };
-  host.footerContainer = { render: () => ["  auto mode"] };
+  host.footerContainer = { render: () => ["  allow mode"] };
   host.footer = { invalidate() {} };
   host.updateAvailableProviderCount = () => {};
   host.updateEditorBorderColor = () => {};
@@ -70,7 +70,7 @@ test("model selector uses the shared frame, filters models, and preserves native
     const plain = () => measure.stripTerminalSequences(panel.render(100).join("\n"));
     assert.ok(plain().includes(`pi coding agent v${runtime.version}`));
     assert.match(plain(), /● model-00 \[example\] current/);
-    assert.match(plain(), /auto mode/);
+    assert.match(plain(), /allow mode/);
     panel.handleInput("model-24");
     assert.match(plain(), /model-24/); assert.doesNotMatch(plain(), /model-01 \[example\]/);
     assert.equal(state.selected.length, 0);

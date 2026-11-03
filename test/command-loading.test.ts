@@ -164,7 +164,7 @@ async function probe(root: string, directory: string, failApproval: unknown, bou
         await session.prompt("/plan cancel");
         await session.prompt("/permissions ask");
         assert.equal((await call("write", { path: "binding.txt", content: "blocked" })).isError, true);
-        await session.prompt("/permissions read-only");
+        await session.prompt("/permissions deny");
         assert.equal((await call("read", { path: "binding.txt" })).isError, false);
         assert.equal((await call("write", { path: "binding.txt", content: "blocked" })).isError, true);
         assert.equal(readFileSync(join(directory, "binding.txt"), "utf8"), "original");

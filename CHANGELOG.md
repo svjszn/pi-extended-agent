@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rename permission modes to `allow`, `ask`, and `deny` across commands, menus, the footer, and diagnostics. Preserve the existing tool policies and recognize legacy `full` and `read-only` values in commands and saved sessions.
+
 ## 1.4.1
 
 - Preserve the selected permission mode across `/clear` and `/new`, before replacement extensions start. Keep tools blocked if the inherited policy cannot be saved, and retain the existing defaults for unrelated fresh sessions.

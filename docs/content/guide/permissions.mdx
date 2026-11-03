@@ -5,7 +5,10 @@ description: Choose which agent actions can run and which need approval.
 
 # Permissions
 
-Fresh sessions use **Full access**. `/clear` and `/new` preserve your current
+The names below apply to the upcoming 2.0.0 release. Version 1.4.x uses `full`,
+`ask`, and `read-only` for the same policies.
+
+Fresh sessions use **Allow**. `/clear` and `/new` preserve your current
 permission mode. To review changes and shell commands before they run, switch
 to Ask mode:
 
@@ -19,17 +22,21 @@ Open `/permissions` without an argument to choose a mode interactively.
 
 | Mode | What the agent can do |
 | --- | --- |
-| `full` | Run tools without approval prompts |
+| `allow` | Run tools without approval prompts |
 | `ask` | Read and search freely; request approval for changes, shell commands, and external tools |
-| `read-only` | Use built-in file reading and search; block changes, shell commands, and external tools |
+| `deny` | Use built-in file reading and search; block changes, shell commands, and external tools |
 
-The footer shows `auto mode`, `ask mode`, or `read only`. Your choice is
+The footer shows `allow mode`, `ask mode`, or `deny mode`. Your choice is
 saved with the session and restored when you resume or reload it. Clearing the
 conversation preserves that choice before extensions start. If the inherited
 policy cannot be saved, tools stay blocked.
 
+The previous names `full` and `read-only` remain accepted as command aliases and
+in saved sessions, mapping to `allow` and `deny`. New selections are saved under
+the new names. Deny still permits the built-in reading and search tools.
+
 Memory reads and plan updates are available in all modes. Memory saves and
-deletes require approval in Ask mode and are blocked in Read only mode.
+deletes require approval in Ask mode and are blocked in Deny mode.
 
 ## Approve an Action
 
@@ -62,4 +69,4 @@ In print mode, actions that require approval are denied. RPC clients must
 respond to the confirmation request.
 
 [Plan mode](/guide/planning) blocks changes and shell commands even with
-Full access until you approve execution.
+Allow until you approve execution.

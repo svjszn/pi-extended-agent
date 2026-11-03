@@ -251,7 +251,7 @@ test("mode shortcut pauses and restores the draft without executing, changing pe
   assert.equal(f.plan().goal, "Keep this draft");
   assert.equal((await f.call("write")).block, true);
   assert.equal(f.sent.length, 0);
-  assert.equal(readPermissionMode(f.entries), "full");
+  assert.equal(readPermissionMode(f.entries), "allow");
   f.ctx.isIdle = () => false; f.pi.events.emit(PLAN_TOGGLE);
   assert.equal(f.plan().status, "ready");
   f.ctx.isIdle = () => true; f.ctx.hasPendingMessages = () => true; f.pi.events.emit(PLAN_TOGGLE);
@@ -291,7 +291,7 @@ test("plan Markdown editing preserves goals, steps, areas and checks while valid
 test("workspace viewers and editors keep the shared frame, document newlines, save and cancellation", async () => {
   const tui = { terminal: { rows: 30 }, requestRender() {} }, theme = createUiTheme();
   let action, saved;
-  const options = { title: "Memory", tui, theme, measure, done() {}, renderHeader: () => ["Header"], renderFooter: () => ["auto mode"] };
+  const options = { title: "Memory", tui, theme, measure, done() {}, renderHeader: () => ["Header"], renderFooter: () => ["allow mode"] };
   const panel = createWorkspaceScreen({ ...options, pages: [{ label: "Index", lines: () => ["First"] }, { label: "Topic", lines: () => ["Second"] }],
     hint: "tab topics · e edit · esc close", actions: { e: "edit" }, onAction: (value, page) => { action = { value, page }; } });
   await panel.ready;
@@ -341,7 +341,7 @@ test("real Pi hooks gate nested tools during planning without changing existing 
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: {input:0,output:0,cacheRead:0,cacheWrite:0,total:0} } });
   const run = session.extensionRunner.createToolContext("workspace-test", undefined), call = (name: string, args: unknown) => run.executeTool(name, args);
   writeFileSync(join(cwd, "sample.txt"), "original");
-  for (const mode of ["full", "ask", "read-only"]) {
+  for (const mode of ["allow", "ask", "deny"]) {
     await session.prompt(`/permissions ${mode}`); await session.prompt("/plan start");
     assert.ok(session.getActiveToolNames().includes("ls"));
     // Interactive and RPC shell entry points emit this hook before executeBash.
@@ -368,12 +368,12 @@ test("real Pi hooks gate nested tools during planning without changing existing 
     assert.equal(session.getActiveToolNames().includes("ls"), false);
     assert.equal(readPermissionMode(session.sessionManager.getEntries()), mode);
     const write = await call("write", { path: "allowed.txt", content: "allowed" });
-    assert.equal(write.isError, mode !== "full");
+    assert.equal(write.isError, mode !== "allow");
     await session.prompt("/plan cancel");
   }
   assert.equal(sent.length, 3); assert.equal(existsSync(join(cwd, "marker.txt")), false);
   assert.equal(readFileSync(join(cwd, "sample.txt"), "utf8"), "original");
-  await session.prompt("/permissions full");
+  await session.prompt("/permissions allow");
   const saved = await call("project_memory", { action: "save", ...note }); assert.equal(saved.isError, false, JSON.stringify(saved));
   const read = await call("project_memory", { action: "read", id: note.id }); assert.equal(read.isError, false, JSON.stringify(read));
   assert.match(JSON.stringify(read), /Details loaded only on demand/);

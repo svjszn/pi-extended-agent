@@ -1,31 +1,38 @@
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 
-export const PERMISSION_MODES = ["full", "ask", "read-only"] as const;
+export const PERMISSION_MODES = ["allow", "ask", "deny"] as const;
 export type PermissionMode = typeof PERMISSION_MODES[number];
 export const PERMISSIONS_ENTRY = "pi-extended-permissions";
 export const PERMISSIONS_CHANGED = "pi-extended:permissions-changed";
 export const PERMISSION_LABELS: Record<PermissionMode, string> = {
-  full: "Full access", ask: "Ask before actions", "read-only": "Read only",
+  allow: "Allow", ask: "Ask", deny: "Deny",
 };
 export const PERMISSION_DESCRIPTIONS: Record<PermissionMode, string> = {
-  full: "Run agent tools without permission prompts.",
+  allow: "Run agent tools without permission prompts.",
   ask: "Read and search freely. Confirm shell commands, changes, and external tools.",
-  "read-only": "Allow built-in read, find, grep, and ls. Block changes, shell, and external tools.",
+  deny: "Allow built-in read, find, grep, and ls. Block changes, shell, and external tools.",
 };
 export function isPermissionMode(value: unknown): value is PermissionMode {
   return PERMISSION_MODES.some((mode) => mode === value);
+}
+/** Read legacy session values and command aliases without rewriting saved history. */
+export function normalizePermissionMode(value: unknown): PermissionMode | undefined {
+  if (isPermissionMode(value)) return value;
+  if (value === "full") return "allow";
+  if (value === "read-only") return "deny";
+  return undefined;
 }
 export function readPermissionMode(entries: readonly { type: string; customType?: string; data?: unknown }[]): PermissionMode {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry.type !== "custom" || entry.customType !== PERMISSIONS_ENTRY) continue;
-    const mode = (entry.data as { mode?: unknown } | undefined)?.mode;
-    if (isPermissionMode(mode)) return mode;
+    const mode = normalizePermissionMode((entry.data as { mode?: unknown } | undefined)?.mode);
+    if (mode) return mode;
   }
-  return "full";
+  return "allow";
 }
 export function permissionDecision(mode: PermissionMode, name: string, tools: readonly Pick<ToolInfo, "name" | "sourceInfo">[]): "allow" | "confirm" | "block" {
-  if (mode === "full") return "allow";
+  if (mode === "allow") return "allow";
   const tool = tools.find((candidate) => candidate.name === name);
   const readOnly = ["read", "find", "grep", "ls"].includes(name)
     && tool?.sourceInfo?.source === "builtin" && tool.sourceInfo.path === `builtin:${name}`;
@@ -33,7 +40,7 @@ export function permissionDecision(mode: PermissionMode, name: string, tools: re
   return mode === "ask" ? "confirm" : "block";
 }
 export function permissionFooter(mode: PermissionMode): string {
-  return mode === "full" ? "auto mode" : mode === "ask" ? "ask mode" : "read only";
+  return `${mode} mode`;
 }
 // Review complete input in bounded pages. Never approve an undisplayable tail.
 const MAX_REQUEST_TEXT = 256_000;

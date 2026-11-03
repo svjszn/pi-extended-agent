@@ -230,7 +230,7 @@ test("only the origin-verified question tool can pass read-only and planning gua
   session.agent.state.messages.push(assistantFixture([{ type: "toolCall", id: "ask-fixture", name: "codemode", arguments: {} }], { stopReason: "toolUse" }));
   const tools = session.extensionRunner.createToolContext("ask-fixture", undefined);
   writeFileSync(join(cwd, "sample.txt"), "original");
-  for (const mode of ["full", "ask", "read-only"]) {
+  for (const mode of ["allow", "ask", "deny"]) {
     await session.prompt(`/permissions ${mode}`);
     for (const planning of [false, true]) {
       if (planning) await session.prompt("/plan start");
@@ -238,7 +238,7 @@ test("only the origin-verified question tool can pass read-only and planning gua
       assert.equal(answer.isError, false, JSON.stringify(answer));
       const payload = JSON.parse(answer.result.content.map(part => part.type === "text" ? part.text : "").join("")) as AskUserResult;
       assert.equal(payload.status, "answered");
-      if (planning || mode === "read-only") {
+      if (planning || mode === "deny") {
         assert.equal((await tools.executeTool("write", { path: "sample.txt", content: "must stay blocked" })).isError, true);
         assert.equal(readFileSync(join(cwd, "sample.txt"), "utf8"), "original");
       }

@@ -158,7 +158,7 @@ export async function runSubagent(request: SubagentRequest): Promise<SubagentRes
     }
     // Narrow the selection before the engine ever offers a write tool, and never
     // beyond what the definition itself declares.
-    const restricted = request.planning || request.mode === "read-only";
+    const restricted = request.planning || request.mode === "deny";
     const tools = restricted
       ? (definition.tools ? definition.tools.filter((tool) => (READ_ONLY_TOOLS as readonly string[]).includes(tool)) : [...READ_ONLY_TOOLS])
       : definition.tools;

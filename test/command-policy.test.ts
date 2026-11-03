@@ -138,7 +138,7 @@ test("configuration keeps the overview layout and integrates preferences in its 
   const sections: import("../lib/config.js").ConfigSection[] = [{ title: "Current session", rows: [["Pi", "1.4.0"], ["Model", "sample"]] },
     { title: "Saved preferences", rows: [["Transport", "auto"]] }, { title: "Files", rows: [["Profile", "/profile"]] }];
   const screen = createConfigScreen({ tui, theme: createUiTheme(), measure, done: () => { closed = true; }, readSections: () => sections,
-    renderHeader: () => ["  Pi header"], renderFooter: () => ["  auto mode"],
+    renderHeader: () => ["  Pi header"], renderFooter: () => ["  allow mode"],
     createPreferences: () => ({ render: () => ["Transport    auto", "Theme        dark"],
       handleInput(data) { if (data === "\x1b") cancelled = true; }, get cancelled() { return cancelled; },
       hasPendingChange: false, applyPendingChange() {}, dispose() { disposed++; } }),
@@ -149,7 +149,7 @@ test("configuration keeps the overview layout and integrates preferences in its 
   assert.doesNotMatch(text(), /Theme\s+dark/);
   screen.handleInput("\t");
   assert.match(text(), /Theme\s+dark/);
-  assert.match(text(), /Pi header/); assert.match(text(), /auto mode/);
+  assert.match(text(), /Pi header/); assert.match(text(), /allow mode/);
   assert.equal(closed, false);
   for (const [width, height] of [[80, 24], [24, 12], [8, 8], [1, 4]]) {
     tui.terminal.rows = height;

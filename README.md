@@ -27,7 +27,7 @@
 
 | Component | Version / default |
 | :--- | :--- |
-| Package | `pi-extended-agent` · `1.4.1` |
+| Package | `pi-extended-agent` · `2.0.0-dev.0` (unreleased development) |
 | Bundled Pi fallback | `1.5.0` |
 | Managed engine | Updated separately with `pi update --engine` |
 | Startup model | Selected by the active Pi engine from its settings and catalog |
@@ -46,12 +46,12 @@ Pi provides the agent loop, tools, authentication, and sessions. This package pr
   ────────────────────────────────────────────────────────────
   >
   ────────────────────────────────────────────────────────────
-  auto mode
+  allow mode
 ```
 
-The header shows the actual engine version, model, effort, and current working directory. Short conversations sit above the input; the footer shows the permissions mode at the left: `auto mode` for full access, `ask mode` for approvals, or `read only`.
+The header shows the actual engine version, model, effort, and current working directory. Short conversations sit above the input; the footer shows the permissions mode at the left: `allow mode` for unrestricted tools, `ask mode` for approvals, or `deny mode`.
 
-The terminal tab is titled **Pi Coding Agent**. Chat messages and input align with the logo's two-column inset. User messages have a subtle dark gray background with light text and an uncolored separating row; assistant replies keep the terminal background. Tool calls stay compact. On Windows, Pi suppresses the terminal/taskbar progress indicator and keeps background update checks from renaming the tab; Windows Terminal settings are unchanged. Below the input, **auto mode** appears on the left and current context usage on the right, for example `~24k / 200k · 12% context`. Narrow terminals show a shorter indicator.
+The terminal tab is titled **Pi Coding Agent**. Chat messages and input align with the logo's two-column inset. User messages have a subtle dark gray background with light text and an uncolored separating row; assistant replies keep the terminal background. Tool calls stay compact. On Windows, Pi suppresses the terminal/taskbar progress indicator and keeps background update checks from renaming the tab; Windows Terminal settings are unchanged. Below the input, **allow mode** appears on the left and current context usage on the right, for example `~24k / 200k · 12% context`. Narrow terminals show a shorter indicator.
 
 ## Installation
 
@@ -161,7 +161,7 @@ directly. The exit hint includes that chat's ID and its resume command.
 | `/effort [level]` | Choose reasoning effort or set a supported level directly |
 | `/theme [dark\|light]` | Choose a dark or light interface |
 | `/color [default\|yellow\|green\|blue\|purple]` | Choose the accent for input borders, the Pi logo, activity charts, and subtle message backgrounds |
-| `/permissions [mode]` | Choose full access, per-action approval, or read-only agent tools |
+| `/permissions [mode]` | Choose allow, ask, or deny for agent tool permissions |
 | `/memory` | Inspect, edit, delete, and toggle automatic project memory |
 | `/plan [goal]` | Research a task, edit its plan, and explicitly approve execution |
 | `/prompt [scope]` | View the native system prompt and edit session, project, or global additions |
@@ -196,16 +196,20 @@ The command menu omits `/settings`, `/tree`, `/thinking`, `/scoped-models`, `/im
 Open `/permissions` to choose a mode in the shared white/gray full-screen interface, or set it directly:
 
 ```text
-/permissions full
+/permissions allow
 /permissions ask
-/permissions read-only
+/permissions deny
 ```
 
-- **Full access** preserves the previous behavior: tools execute without this package's approval prompts. It is the default for new sessions.
-- **Ask before actions** allows Pi's built-in `read`, `find`, `grep`, and `ls` without prompting. File changes, shell commands, and other tools (including MCP and nested tools) require approval for each call. TUI approval screens show complete input in bounded pages: use PgUp/PgDn for pages, Home/End for the first/last page, and Up/Down to scroll within a page. Approval starts on Deny and supports Allow once. RPC receives the complete input in Pi's confirmation request; a client must respond. Requests that cannot be displayed completely within 256,000 characters are denied. Without an interactive UI, calls requiring approval are denied.
-- **Read only** permits those four built-in reading/search tools. Write, edit, Bash, PowerShell, and external tools are blocked. External tools' read-only hints do not grant permission. Our own memory reads and plan updates are also allowed: they only access the app's project notebook. Memory saves and deletes follow the normal permissions policy.
+These names are part of the unreleased 2.0.0 work. The previous names `full` and
+`read-only` remain supported in commands and saved sessions as aliases for
+`allow` and `deny`.
 
-The selection is saved as session metadata and restored on resume or reload. `/clear` and `/new` preserve it before the new session starts; a failed policy write keeps tools blocked. Unrelated fresh sessions retain the Full access default. It applies to subsequent tool calls; it does not stop a tool already running. Pending approval dialogs are cancelled when the mode changes or the session shuts down. The footer reflects the selected mode. These controls govern agent tool calls, including calls through other tools; they are not an operating-system sandbox or a project-directory boundary. Explicit user shell commands (`!` / `!!`), command actions such as installing skills, and extensions' direct code execution keep their existing behavior. Project trust remains separate.
+- **Allow** runs tools without this package's approval prompts. It is the default for new sessions.
+- **Ask** allows Pi's built-in `read`, `find`, `grep`, and `ls` without prompting. File changes, shell commands, and other tools (including MCP and nested tools) require approval for each call. TUI approval screens show complete input in bounded pages: use PgUp/PgDn for pages, Home/End for the first/last page, and Up/Down to scroll within a page. Approval starts on Deny and supports Allow once. RPC receives the complete input in Pi's confirmation request; a client must respond. Requests that cannot be displayed completely within 256,000 characters are denied. Without an interactive UI, calls requiring approval are denied.
+- **Deny** permits those four built-in reading/search tools. Write, edit, Bash, PowerShell, and external tools are blocked. External tools' read-only hints do not grant permission. Our own memory reads and plan updates are also allowed: they only access the app's project notebook. Memory saves and deletes follow the normal permissions policy.
+
+The selection is saved as session metadata and restored on resume or reload. `/clear` and `/new` preserve it before the new session starts; a failed policy write keeps tools blocked. Unrelated fresh sessions retain the Allow default. It applies to subsequent tool calls; it does not stop a tool already running. Pending approval dialogs are cancelled when the mode changes or the session shuts down. The footer reflects the selected mode. These controls govern agent tool calls, including calls through other tools; they are not an operating-system sandbox or a project-directory boundary. Explicit user shell commands (`!` / `!!`), command actions such as installing skills, and extensions' direct code execution keep their existing behavior. Project trust remains separate.
 
 ### Automatic project memory
 
@@ -219,9 +223,9 @@ Notes live under the active profile's `pi-extended/projects/PROJECT_KEY/memory/`
 
 **Shift+Tab** in the chat input cycles **auto → plan → code → auto** while idle. `/mode auto`, `/mode plan`, and `/mode code` select a mode directly. Code mode enables Pi's native `codemode` tool alongside ordinary tools and uses the same blue footer label as high effort. Leaving plan mode pauses and preserves the plan; returning restores the draft. It keeps your input text, effort, and permission choice. It does not start execution. Finish the current run and queued messages before switching. **Shift+Left/Right** decreases/increases reasoning effort through the current model's supported levels, stopping at the lowest/highest level; `/effort` also remains available. Inside command screens, Shift+Tab keeps its usual navigation behavior.
 
-Use `/plan <goal>` to start research, or open `/plan` and press **s** to enable planning before describing the task. The agent saves the goal, steps, affected areas, and checks with `update_plan`. The footer shows `plan mode`. A tool hook allows only built-in reading/search tools, memory reads, and our internal plan updates. Available built-in `find`, `grep`, and `ls` tools are temporarily activated so research works without shell access; the previous selection is restored on execution or cancellation. Changes, external tools, nested mutation calls, and shell commands are blocked even under Full access. Interactive/RPC user shell commands are also blocked while planning.
+Use `/plan <goal>` to start research, or open `/plan` and press **s** to enable planning before describing the task. The agent saves the goal, steps, affected areas, and checks with `update_plan`. The footer shows `plan mode`. A tool hook allows only built-in reading/search tools, memory reads, and our internal plan updates. Available built-in `find`, `grep`, and `ls` tools are temporarily activated so research works without shell access; the previous selection is restored on execution or cancellation. Changes, external tools, nested mutation calls, and shell commands are blocked even under Allow. Interactive/RPC user shell commands are also blocked while planning.
 
-Review the result with `/plan`, edit with **e** or `/plan edit`, and explicitly choose **x** or `/plan execute` to start implementation. Only a user command can approve execution. The existing `/permissions` mode stays in force; executing a plan never grants Full access. `/plan cancel` leaves planning without starting work. Plans are saved per session in the profile, survive compaction, and restore when that session is resumed or reloaded. During execution the agent tracks pending, in-progress, and completed steps; changing the approved scope requires another edit and approval.
+Review the result with `/plan`, edit with **e** or `/plan edit`, and explicitly choose **x** or `/plan execute` to start implementation. Only a user command can approve execution. The existing `/permissions` mode stays in force; executing a plan never grants Allow. `/plan cancel` leaves planning without starting work. Plans are saved per session in the profile, survive compaction, and restore when that session is resumed or reloaded. During execution the agent tracks pending, in-progress, and completed steps; changing the approved scope requires another edit and approval.
 
 ### System prompt additions
 
@@ -269,7 +273,7 @@ pi --no-extensions
 
 `/agents` lists the configured subagents, creates and edits them, and runs one directly with `/agents run NAME TASK`. A subagent is a separate agent run with its own instructions, tool selection, and context; it receives one task and returns a single report, so its intermediate work never enters your conversation. The model can delegate on its own with the `task` tool when a task is self-contained.
 
-Two agents are available out of the box: **scout** researches the codebase and returns concise findings with file and line references; **lens** independently reviews changes for actionable bugs and regressions. Both inherit the current model and effort. Scout has only read, find, grep, and ls; lens also has bash for Git inspection, subject to the current permissions and planning barrier. In Read only or Plan mode, supply a diff or explicit review files when lens cannot inspect Git through shell commands.
+Two agents are available out of the box: **scout** researches the codebase and returns concise findings with file and line references; **lens** independently reviews changes for actionable bugs and regressions. Both inherit the current model and effort. Scout has only read, find, grep, and ls; lens also has bash for Git inspection, subject to the current permissions and planning barrier. In Deny or Plan mode, supply a diff or explicit review files when lens cannot inspect Git through shell commands.
 
 Subagent activity appears in the existing Working line immediately above the input, with the agent's name, animated indicator, elapsed time, activity or current tool, tool-call count, and cancellation hint. Concurrent runs share that line: the most recently started agent is shown with a count of other active runs. The status clears when the run ends. Intermediate reasoning, tool arguments, and results stay out of the parent conversation.
 
@@ -279,7 +283,7 @@ Use `/scout trace how engine updates are activated` for research or `/lens` to r
 
 Definitions are Markdown files with frontmatter, either in `.pi/agents/NAME.md` in the project or `AGENT_DIR/agents/NAME.md` in the profile. Project definitions shadow profile definitions with the same name and are ignored until Pi trusts the project. `description` tells the model when to delegate; `tools` is optional and narrows the selection by name or `*` pattern, where `tools: []` means none; `model` is optional and keeps the current model when absent. The body is added to Pi's own system prompt rather than replacing it. A definition that cannot be read is listed by name so the remaining agents keep working.
 
-A subagent never gets more access than the session has granted. It runs the same checks as your own tool calls: Full access runs without prompts, Ask before actions requires approval for each change, Read only and plan mode offer just the built-in read, find, grep, and ls tools, narrowed further to what the definition lists. In Ask mode the dialog names the subagent and offers **Deny**, **Allow once**, and **Allow for this run**; denial stays the default, the run-wide choice is never preselected, and one dialog appears at a time whether the request comes from your own call or a subagent. A subagent cannot ask questions, cannot start another subagent, does not load commands, project memory, or skills, is bounded to 100 tool calls, and writes no transcript to the profile.
+A subagent never gets more access than the session has granted. It runs the same checks as your own tool calls: Allow runs without prompts, Ask requires approval for each change, Deny and plan mode offer just the built-in read, find, grep, and ls tools, narrowed further to what the definition lists. In Ask mode the dialog names the subagent and offers **Deny**, **Allow once**, and **Allow for this run**; denial stays the default, the run-wide choice is never preselected, and one dialog appears at a time whether the request comes from your own call or a subagent. A subagent cannot ask questions, cannot start another subagent, does not load commands, project memory, or skills, is bounded to 100 tool calls, and writes no transcript to the profile.
 
 ## Development
 
