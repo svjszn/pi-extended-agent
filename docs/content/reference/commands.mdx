@@ -38,7 +38,7 @@ Native Pi commands such as `/login`, `/logout`, `/new`, `/resume`, `/compact`,
 
 ### Files and changes
 
-`/diff` and `/nano` are part of the upcoming 2.0.0 release. Both require an idle
+`/diff` and `/nano` were added in 1.5.0. Both require an idle
 interactive TUI. See [Files and changes](/guide/files) for navigation, saving,
 supported files, and the distinction between manual edits and agent permissions.
 
@@ -74,32 +74,21 @@ pi --resume
 pi --model PROVIDER/MODEL_ID
 pi --tui-mode regular
 pi --help
-pi ui
-pi ui --port 3210
-pi ui --no-open
 pi doctor
 pi doctor --json
 pi update
 pi update --check
 pi update --engine
 pi update --engine --check
-pi update --rollback
+pi update --engine --rollback
 ```
 
 `pi-extended-agent` is an alias for the same executable. Update options are
 described in [Updates](/guide/updates).
 
-### Browser dashboard
-
-`pi ui [--port 0..65535] [--no-open]` launches a local browser interface for
-saved chats and live conversations. It is part of the upcoming 2.0.0 release.
-The default port is assigned automatically, and the server stays in the
-foreground until Ctrl+C. See [Browser dashboard](/guide/web-ui) for setup,
-authentication, session behavior, and supported actions.
-
 ### Diagnostics
 
-Doctor is part of the unreleased work toward 2.0.0.
+Doctor was added in 1.5.0.
 
 `/doctor` opens the shared command screen with OK, WARN and ERROR checks. It
 inspects installation and engine files, profile access, settings JSON, and the

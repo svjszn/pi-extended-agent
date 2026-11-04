@@ -14,6 +14,7 @@ agree on the wrapper version and bundled Pi engine. Run:
 npm ci
 npm run release:check
 npm ci --prefix docs
+npm run check --prefix docs
 npm run build --prefix docs
 ```
 
@@ -72,11 +73,11 @@ Authenticate with `npm login` and confirm the account with `npm whoami`. Before
 the first publication, verify the package name is available or owned by the
 intended account. Confirm the target version has not already been published.
 
-For version 1.3.0:
+For version 1.5.0:
 
 ```sh
 npm view pi-extended-agent versions --json
-npm publish .local/releases/pi-extended-agent-1.3.0.tgz --access public
+npm publish .local/releases/pi-extended-agent-1.5.0.tgz --access public
 ```
 
 For a never-published name, `npm view` may return `E404`. Follow npm's browser
@@ -86,8 +87,8 @@ tracked files. Never publish from `docs/`, which is marked private.
 Verify registry metadata and an isolated global install after publication:
 
 ```sh
-npm view pi-extended-agent@1.3.0 version dist.integrity
-npm install -g --prefix .local/published-smoke --ignore-scripts pi-extended-agent@1.3.0
+npm view pi-extended-agent@1.5.0 version dist.integrity
+npm install -g --prefix .local/published-smoke --ignore-scripts pi-extended-agent@1.5.0
 ```
 
 Run the installed `pi --version` and `pi --help` from that prefix with an empty
@@ -97,8 +98,9 @@ as a release smoke test.
 
 ## 4. Tag and announce
 
-After publication and deployment have been verified, replace any remaining
-prepublication wording, commit those changes, tag the release commit as `v1.3.0`,
-and push the tag. Create the GitHub release from the changelog, linking both
+Finalize prepublication wording before the final verification and release
+commit in step 1. After publication and deployment have been verified, tag that
+same tested, published commit as `v1.5.0` and push the tag. Further edits belong
+in a later commit. Create the GitHub release from the changelog, linking both
 the documentation and npm package. Do not claim publication or deployment until
 their remote results have been checked.

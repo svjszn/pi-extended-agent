@@ -2,17 +2,19 @@ import { Layout, Navbar } from 'nextra-theme-docs';
 import { Head } from 'nextra/components';
 import { getPageMap } from 'nextra/page-map';
 import { PiMark } from '../components/pi-mark';
+import localFont from 'next/font/local';
 import 'nextra-theme-docs/style.css';
 import './style.css';
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+const inter = localFont({ src: '../assets/fonts/InterVariable.woff2', display: 'swap', weight: '100 900', variable: '--font-inter' });
 
 export const metadata = {
   metadataBase: new URL(`https://svjszn.github.io${basePath}/`),
   title: { default: 'Pi Extended Agent', template: '%s · Pi Extended Agent' },
   description: 'Learn how to install and use Pi Extended Agent: models, commands, planning, project memory, and configuration.',
   applicationName: 'Pi Extended Agent',
-  icons: { icon: `${basePath}/favicon.svg` },
+  icons: { icon: { url: `${basePath}/favicon.svg?v=2`, type: 'image/svg+xml', sizes: 'any' } },
 };
 
 export default async function RootLayout({ children }) {
@@ -22,10 +24,10 @@ export default async function RootLayout({ children }) {
         color={{ hue: 0, saturation: 0, lightness: { light: 10, dark: 100 } }}
         backgroundColor={{ light: '#fff', dark: '#000' }}
       />
-      <body className="pi-docs">
+      <body className={`${inter.variable} pi-docs`}>
         <Layout
           navbar={<Navbar
-            logo={<span className="pi-brand"><PiMark size={22} /><span>Pi Extended Agent</span></span>}
+            logo={<span className="pi-brand"><PiMark size={23} /><span>Pi Extended Agent</span></span>}
             projectLink="https://github.com/svjszn/pi-extended-agent"
           />}
           footer={null}

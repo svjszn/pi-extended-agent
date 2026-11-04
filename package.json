@@ -1,6 +1,6 @@
 {
   "name": "pi-extended-agent",
-  "version": "2.0.0-dev.0",
+  "version": "1.5.0",
   "description": "Pi Coding Agent with a custom interface and managed engine updates",
   "license": "MIT",
   "repository": {

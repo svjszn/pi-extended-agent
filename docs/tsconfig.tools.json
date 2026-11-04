@@ -11,5 +11,5 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/**/*.ts", "next.config.mts"]
+  "include": ["scripts/**/*.ts", "test/**/*.ts", "next.config.mts"]
 }

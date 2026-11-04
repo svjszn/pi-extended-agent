@@ -5,6 +5,14 @@ description: Resolve command conflicts, missing authentication, and engine updat
 
 # Troubleshooting
 
+## Start with local diagnostics
+
+Run `pi doctor` in your terminal or `/doctor` inside Pi (available from 1.5.0).
+The report names installation, settings, engine, and session problems and
+suggests recovery steps. It is read-only and does not test provider credentials.
+Use `pi doctor --json` for structured output. See
+[Diagnostics](/reference/commands#diagnostics) for its scope and exit codes.
+
 ## The original Pi interface opens
 
 Check `Get-Command pi -All` in PowerShell or `type -a pi` in Bash/Zsh. Another
@@ -33,12 +41,12 @@ Check connectivity, npm registry settings, and proxy or certificate settings.
 If version lookup is failing, an exact version skips that lookup:
 
 ```sh
-pi update --to 1.4.0
+pi update --engine --to 1.5.0
 ```
 
 Installation still needs registry access or cached packages. Failed updates
 leave the previous engine active. After a successful update, use
-`pi update --rollback` to select the previous engine if necessary.
+`pi update --engine --rollback` to select the previous engine if necessary.
 
 ## The updater or memory store reports a lock
 

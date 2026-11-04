@@ -1,7 +1,6 @@
 export default {
   models: 'Models and effort',
   interface: 'Terminal interface',
-  'web-ui': 'Browser dashboard',
   files: 'Files and changes',
   planning: 'Planning',
   'code-mode': 'Code mode',

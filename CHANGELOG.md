@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-- Add `pi ui` with a local browser dashboard for searchable chat history, new/resumed conversations, streamed replies, tool activity, model/effort/permission controls, native confirmations, and structured `ask_user` answers. Preserve Pi's RPC agent loop, session format, trust and planning guards; inherit active restrictions before starting new browser chats. Bind to loopback, authenticate local API access, reject cross-origin requests, and keep provider configuration out of browser responses. Include responsive dark/light layouts and browser documentation.
+## 1.5.0
+
+- Shorten the README to installation, an overview, updates, and links to the guides. Review the documentation against the implemented commands; clarify work modes, skill toggles, agent versus engine updates, appearance preferences, and release preparation.
+
+- Refresh the documentation with self-hosted Inter, Lucide icons, a monochrome palette, borderless gray content cards and command blocks, and responsive layouts. Preserve the original navigation layout and text sizes, keep the header aligned to the content grid, and retain the GitHub icon. Display the Pi mark without a background and use Pi's official color-scheme-aware favicon. Keep its fonts and dependencies within the documentation project. Preserve static documentation router URLs after Windows exports.
+
+- Show only the main `pi --resume SESSION_ID` command on exit, without the parenthesized short-form alias.
+
+- Refine terminal tool output with status dots, `Tool(argument)` headings, quiet `⎿` results, confirmed edit line counts and preserved syntax/diff colors in expanded details. Add a profile-wide Tool output preference in `/config`: Compact groups consecutive successful reads and searches into a clickable research summary; opening a group lists calls without opening every result. Full opens each call's native details. Keep running tools, errors, commands and file changes separate, preserve native expansion controls and the complete session transcript, and check both views against candidate engines.
+
+- Move the unreleased browser dashboard into the separate Pi Learn project. Remove its CLI entry point, browser-specific RPC question bridge, assets, documentation and package checks from Pi Extended Agent; keep this package focused on terminal coding.
 
 - Keep the `/nano` text cursor visible when Pi hides the hardware cursor, including empty lines and the end of a file.
 

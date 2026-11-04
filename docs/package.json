@@ -3,16 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.19.0" },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "predev": "node scripts/prepare-search.ts",
     "dev": "next dev --webpack",
-    "check": "tsc -p tsconfig.tools.json",
+    "check": "tsc -p tsconfig.tools.json && node --test test/export.test.ts",
     "build": "next build --webpack",
-    "postbuild": "pagefind --site out --output-path out/_pagefind && node scripts/sync-search.ts && node scripts/check-export.ts",
+    "postbuild": "node scripts/prepare-export.ts && pagefind --site out --output-path out/_pagefind && node scripts/sync-search.ts && node scripts/check-export.ts",
     "preview": "node scripts/preview.ts"
   },
   "dependencies": {
+    "lucide-react": "1.68.0",
     "next": "16.4.2",
     "nextra": "4.6.1",
     "nextra-theme-docs": "4.6.1",

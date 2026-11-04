@@ -5,21 +5,44 @@ description: Update Pi Extended Agent from your terminal.
 
 # Updates
 
-Run this in your terminal, then restart Pi:
+The package and engine have separate updaters. Run these in your terminal,
+then restart Pi:
 
 ```sh
 pi update
+pi update --engine
 ```
 
-Use `pi update --check` to check for a release without installing it, or
-`pi update --help` for additional options.
+`pi update` updates **Pi Extended Agent** through npm. `pi update --engine`
+installs a compatible **Pi Coding Agent engine** in the managed runtime
+directory. It keeps the `pi` command owned by this package. `pi --version`
+shows both versions.
+
+Check without installing:
+
+```sh
+pi update --check
+pi update --engine --check
+```
 
 An available release appears in the input corner for 12 seconds, alternating
 with the current reasoning effort for 24 seconds. Agent releases show
 `pi update`; engine releases show `pi update --engine`.
 
-The managed Pi engine updates separately with `pi update --engine`. If its
-active files are missing or incomplete, recover with:
+## Engine versions and rollback
+
+To select an exact engine version, use `--to`. For example, the engine bundled
+with Pi Extended Agent 1.5.0 is 1.5.0:
+
+```sh
+pi update --engine --to 1.5.0
+```
+
+An engine is activated only after its installation and compatibility checks
+pass. A failed update keeps the previous selection. This does not pin the
+version of Pi Extended Agent itself.
+
+If the active engine's files are missing or incomplete, recover with:
 
 ```sh
 pi update --engine --rollback
@@ -28,3 +51,13 @@ pi update --engine --rollback
 Rollback verifies the previous engine, or the bundled engine when there is no
 previous managed release, before changing the selection. It works without
 loading the damaged active engine. A failed recovery keeps the selection intact.
+
+Use `pi update --engine --offline` to select the newest complete engine already
+cached on this computer, or `pi update --help` for additional options.
+
+## Linked source checkouts
+
+`pi update` refuses to replace a linked source checkout. Update that checkout
+through Git, rebuild with `npm run build`, and restart Pi. See
+[Installation](/getting-started/installation#install-from-source) for linking
+and rebuilding.

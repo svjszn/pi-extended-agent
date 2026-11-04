@@ -3,15 +3,31 @@ title: Getting Started
 description: Install Pi Extended Agent and start your first coding session.
 ---
 
-# Getting Started
+<DocsIntro />
 
-**Pi Extended Agent** is a terminal coding agent built on [Pi](https://pi.dev).
-It adds project memory, planning, permission controls, and a custom interface.
-You can use it with the models and providers supported by Pi.
+<CardGrid>
+  <DocCard href="/getting-started/installation" icon="terminal" title="Your first session">
+    Install Pi, connect your model, and get to work in your project.
+  </DocCard>
+  <DocCard href="/guide/permissions" icon="permissions" title="Stay in control">
+    Choose which actions need your approval before Pi runs them.
+  </DocCard>
+  <DocCard href="/reference/commands" icon="commands" title="Find your flow">
+    The commands and shortcuts that keep everyday work moving.
+  </DocCard>
+  <DocCard href="/guide/memory" icon="memory" title="Keep the useful things">
+    Carry project knowledge and preferences into your next session.
+  </DocCard>
+</CardGrid>
+
+Pi Extended Agent builds on [Pi](https://pi.dev) with project memory, planning,
+permission controls, and a focused interface. Use the models and providers
+supported by Pi.
 
 ## Installation
 
-You need **Node.js 22.19 or later**. Install the package globally with npm:
+You need **Node.js 22.19 or later** and npm. On Windows, install Git for Windows
+to provide Bash for Pi's shell tool. Install the package globally:
 
 ```sh
 npm install -g --ignore-scripts pi-extended-agent
@@ -30,10 +46,19 @@ pi
 ```
 
 Inside Pi, run `/login` and follow the sign-in flow for your provider. Existing
-credentials in your Pi profile are reused.
+credentials in your Pi profile are reused. Run `/model` to choose from the
+models available to your account.
 
 ```text
 /login
+/model
+```
+
+Fresh sessions use Allow, which runs tools without this package's approval
+prompts. For approval before changes and shell commands, switch to Ask:
+
+```text
+/permissions ask
 ```
 
 You can now describe a task in the chat:
@@ -41,10 +66,6 @@ You can now describe a task in the chat:
 ```text
 Read this project and explain where the application starts.
 ```
-
-The agent can read files, run tools, and make changes in your project. New
-sessions use Allow by default. To approve changes and shell commands
-before they run, enter `/permissions ask`.
 
 ## Choose a Model
 
@@ -74,9 +95,6 @@ While planning, changes and shell commands are blocked.
 See [Planning](/guide/planning) for editing, pausing, and resuming a plan.
 
 ## Next Steps
-
-The upcoming 2.0.0 release adds `pi ui` for a local browser dashboard with chat
-history and live conversations. See [Browser dashboard](/guide/web-ui).
 
 - [Commands](/reference/commands): find the available slash and terminal commands.
 - [Project memory](/guide/memory): keep useful project facts across sessions.

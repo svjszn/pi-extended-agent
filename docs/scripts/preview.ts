@@ -5,7 +5,7 @@ import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 const root = resolve('out');
 const basePath = process.env.DOCS_BASE_PATH ?? '';
 const port = Number(process.env.PORT ?? 3000);
-const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.png': 'image/png', '.ico': 'image/x-icon' };
+const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
 createServer(async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }

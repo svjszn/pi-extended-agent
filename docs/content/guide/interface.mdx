@@ -24,6 +24,44 @@ usage yet; reported output usage replaces that estimate when available.
 The timer includes tool work and retries. Both counters reset for the next run.
 Narrow terminals shorten or hide the details to keep the status and effort readable.
 
+## Appearance
+
+Use `/theme` and `/color` to choose interactively, or set them directly:
+
+```text
+/theme light
+/color blue
+```
+
+Themes are `dark` and `light`. Accent choices are `default` (neutral), `yellow`,
+`green`, `blue`, and `purple`. The accent colors the Pi mark, input borders,
+activity charts, and subtle user message backgrounds. Text and effort colors
+stay independent. Your choices are saved in the active profile.
+
+In `/config` → **Preferences**, **Legacy logo** switches to the classic serif π.
+
+## Tool Output
+
+Choose **Tool output** in `/config` → **Preferences**. The choice is saved in the
+active profile and applies to the terminal interface.
+
+- **Compact** is the default. Consecutive successful reads and searches share a
+  row such as `● Explored 4 files · 2 searches`. Click it to list the individual
+  calls, then click a call to inspect its result. Opening a group keeps file
+  contents collapsed. Running tools, errors, shell commands and file changes
+  stay separate. Calls use labels such as `Bash(npm test)` and `Update(src/main.ts)`;
+  a quiet `⎿` line shows the latest shell output or confirmed edit line counts.
+- **Full** opens each tool's native details, including code, diffs and output.
+  Syntax and diff colors remain visible in both themes.
+
+Click a tool's header to expand or collapse it. Pi's tool-expansion shortcut
+(`Ctrl+O` by default) expands or collapses all calls in the current conversation;
+it does not change the saved preference.
+
+These views change presentation only. The complete tool calls and results remain
+in the session, and permissions and plan execution still require their ordinary
+confirmations.
+
 ## Questions from the Agent
 
 When a decision needs your input, the agent can open a question screen with the
@@ -40,10 +78,8 @@ without sending partial answers.
 Questions work in auto, code, and plan modes, including Deny permissions.
 Answering a question does not grant tool permissions or approve a plan; plan
 execution still requires `/plan execute`. Questions share the dialog queue with
-permission requests. The [browser dashboard](/guide/web-ui) collects the same
-structured answers through its RPC connection. Ordinary print/RPC clients
-report the screen as unavailable and collect no answer. Subagents do not
-receive this tool.
+permission requests. Print/RPC clients report the screen as unavailable and
+collect no answer. Subagents do not receive this tool.
 
 ## Resume a Chat
 
@@ -74,8 +110,9 @@ reasoning effort, permissions, and work mode.
 
 | Shortcut | Action |
 | --- | --- |
-| Shift+Tab | Switch between normal mode and plan mode |
+| Shift+Tab | Cycle auto → plan → code → auto while idle |
 | Shift+Left / Shift+Right | Decrease / increase reasoning effort |
+| Ctrl+O | Expand or collapse tool details (default Pi binding) |
 | Escape | Exit when the input is empty and the agent is idle |
 
 During a run, Escape keeps Pi's cancellation behavior. If you have a draft or

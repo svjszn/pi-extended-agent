@@ -14,11 +14,17 @@ browse loaded skills, or enter a query to search the public catalog:
 
 ## Find a Skill
 
-The Installed tab lists skills discovered by Pi. Type to filter the list.
-A filled circle **●** marks a skill loaded in this session; **○** marks one
-that is not loaded.
+The Installed tab lists enabled and disabled skills discovered by Pi, including
+configured paths and packages. Type to filter the list. A filled circle **●**
+marks an enabled skill; **○** marks a disabled skill. Enter opens its preview.
 
-In Search, type at least two characters to search skills.sh. Select a result
+Select a skill and press **Space** to enable or disable it. The choice is saved
+in the skill's settings scope and takes effect when you close the screen and
+Pi reloads. Disabling a skill keeps its files and leaves it in the list so you
+can enable it again.
+
+Use **Tab** to switch to Search. Type at least two characters to search
+[skills.sh](https://skills.sh/). Select a result
 with Up/Down and press Enter to read its `SKILL.md` preview from GitHub.
 
 ## Install a Skill
