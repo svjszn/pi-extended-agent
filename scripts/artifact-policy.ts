@@ -18,6 +18,7 @@ export function assertProductionOutput(files: string[], manifest: unknown): void
   for (const file of files) {
     if (file.startsWith("dist/extensions/")) assert.ok(allowed.has(file), `Unexpected production extension output: ${file}`);
     assert.ok(!/(^|\/)(?:dev|performance)(\/|\.)|(^|\/)performance-view\./i.test(file), `Development diagnostics must not ship: ${file}`);
+    assert.ok(!/^dist\/(?:bin\/(?:ui|web-server)|(?:lib|ui)\/web-[^/]+)\.js(?:\.map)?$/.test(file), `Retired browser output must not ship: ${file}`);
   }
 }
 
@@ -29,4 +30,5 @@ export function assertPackageFiles(files: string[], manifest: unknown): void {
   assert.ok(files.every((file) => !/(^|\/)(?:\.env(?:\..*)?|auth\.json|\.local|node_modules|test)(\/|$)/.test(file)),
     "Package includes local/private files.");
   assert.ok(files.every((file) => !/^(?:docs|dev|profile|scripts|\.github)\//.test(file)), "Package includes development-only files.");
+  assert.ok(files.every((file) => !/^ui\/assets\//.test(file)), "Package includes retired browser assets.");
 }

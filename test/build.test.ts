@@ -120,6 +120,10 @@ test("artifact policy requires an explicit extension list and rejects stale or d
     assert.throws(() => assertPackageFiles([...files, name], manifest), /./, name);
   }
   assert.throws(() => assertPackageFiles(files.filter((name) => name !== "dist/extensions/current.js"), manifest), /Missing production extension/);
+  for (const retired of ["dist/bin/ui.js", "dist/bin/ui.js.map", "dist/bin/web-server.js", "dist/lib/web-rpc.js", "dist/lib/web-types.js.map", "dist/ui/web-client.js", "dist/ui/web-icons.js",
+    "ui/assets/InterVariable.woff2", "ui/assets/lucide.svg"]) {
+    assert.throws(() => assertPackageFiles([...files, retired], manifest), /[Rr]etired browser/);
+  }
 });
 
 test("the production package registers only allowlisted extensions, without diagnostics", async (t) => {
