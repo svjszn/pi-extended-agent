@@ -1,4 +1,5 @@
 import type { ExtensionContext, ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { toolOutputMode } from "./appearance.js";
 
 export interface ConfigSection { title: string; rows: [string, string][] }
 interface ConfigPaths { agentDir: string; globalPath: string; projectPath: string; tuiMode?: string; version: string }
@@ -12,6 +13,7 @@ export function configSections(ctx: ExtensionContext, pi: ExtensionAPI, settings
       ["Effort", pi.getThinkingLevel()],
       ["Theme", ctx.ui.theme?.name || settings.getTheme() || "Default"],
       ["Interface", tuiMode || "Non-interactive"],
+      ["Tool output", toolOutputMode()],
       ["Tools", pi.getActiveTools().join(", ") || "None"],
     ] },
     { title: "Saved preferences", rows: [

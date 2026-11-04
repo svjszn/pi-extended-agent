@@ -65,6 +65,7 @@ export default function piInterface(pi: ExtensionAPI) {
       getThinkingLevel: lastKnown(() => pi.getThinkingLevel(), ""),
       getCwd: lastKnown(() => ctx.cwd, process.cwd()),
       getAuthNotice: lastKnown<string | undefined>(() => startupAuthNotice(ctx), undefined),
+      getToolsExpanded: lastKnown(() => ctx.ui.getToolsExpanded(), false),
     };
     ctx.ui.setHeader((tui) => {
       if (activeTui !== tui) {

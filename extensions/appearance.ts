@@ -1,7 +1,7 @@
 import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { ACCENT_COLORS, AppearanceStore, getAppearance, rememberAppearanceTheme, setAppearance } from "../lib/appearance.js";
+import { ACCENT_COLORS, AppearanceStore, getAppearance, rememberAppearanceTheme, setAppearance, toolOutputMode } from "../lib/appearance.js";
 import type { Appearance } from "../lib/appearance.js";
 import { nativeAppearanceTheme } from "../ui/appearance.js";
 
@@ -18,6 +18,7 @@ export default function appearanceCommands(pi: ExtensionAPI, store = new Appeara
       if (!result.success) throw new Error(result.error ?? "Could not apply appearance.");
       rememberAppearanceTheme(themed);
       setAppearance(value);
+      ctx.ui.setToolsExpanded?.(toolOutputMode(value) === "full");
     } catch (error) { notify(ctx, error instanceof Error ? error.message : String(error), "error"); }
   });
   const choices = {

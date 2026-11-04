@@ -1,7 +1,7 @@
 import { getAgentDir, SettingsManager, VERSION } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { AppearanceStore, getAppearance, setAppearance } from "../lib/appearance.js";
+import { AppearanceStore, getAppearance, setAppearance, toolOutputMode } from "../lib/appearance.js";
 import { CONFIG_PREFERENCES } from "../lib/config-preferences.js";
 import type { ConfigPreferences, ConfigPreferencesUI } from "../lib/config-preferences.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -42,18 +42,25 @@ export default function configCommand(pi: ExtensionAPI) {
             readSections: () => readSections(tui.mode),
             createPreferences: factory ? () => (preferences = factory({
               items: [{ id: "legacy-logo", label: "Legacy logo", currentValue: getAppearance().legacyLogo ? "on" : "off",
-                values: ["off", "on"], description: "Replace the header mark with the classic serif π logo." }],
-              onChange: (_id, value) => {
+                values: ["off", "on"], description: "Replace the header mark with the classic serif π logo." },
+                { id: "tool-output", label: "Tool output", currentValue: toolOutputMode(), values: ["compact", "full"],
+                  description: "Compact groups reads and searches. Full opens each tool's details. Click a row or use Ctrl+O to expand tools." }],
+              onChange: (id, value) => {
                 const previous = getAppearance();
-                const next = { ...previous, legacyLogo: value === "on" };
+                const next = id === "tool-output" ? { ...previous, toolOutput: value as "compact" | "full" }
+                  : { ...previous, legacyLogo: value === "on" };
                 try {
                   new AppearanceStore(agentDir).write(next);
                   setAppearance(next);
+                  if (id === "tool-output") {
+                    try { ctx.ui.setToolsExpanded?.(value === "full"); }
+                    catch (error) { ctx.ui.notify(`Tool output was saved but could not be applied: ${error instanceof Error ? error.message : String(error)}`, "error"); }
+                  }
                   tui.requestRender();
                   return value;
                 } catch (error) {
                   ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
-                  return previous.legacyLogo ? "on" : "off";
+                  return id === "tool-output" ? toolOutputMode(previous) : previous.legacyLogo ? "on" : "off";
                 }
               },
             })) : undefined,

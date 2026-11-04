@@ -5,7 +5,9 @@ export const ACCENT_COLORS = Object.freeze({
   yellow: "#FFC107", green: "#4EBA65", blue: "#B1B9F9", purple: "#AF87FF",
 });
 export type AccentColor = "default" | keyof typeof ACCENT_COLORS;
-export interface Appearance { mode: "dark" | "light"; color: AccentColor; legacyLogo?: boolean }
+export type ToolOutputMode = "compact" | "full";
+export interface Appearance { mode: "dark" | "light"; color: AccentColor; legacyLogo?: boolean; toolOutput?: ToolOutputMode }
+export const toolOutputMode = (appearance = getAppearance()): ToolOutputMode => appearance.toolOutput ?? "compact";
 const isAccentColor = (value: unknown): value is AccentColor => typeof value === "string"
   && (value === "default" || Object.hasOwn(ACCENT_COLORS, value));
 export const DEFAULT_APPEARANCE: Readonly<Appearance> = Object.freeze({ mode: "dark", color: "default" });
@@ -26,7 +28,8 @@ export function forgetAppearanceTheme() { state.theme = undefined; }
 export const getAppearance = (): Readonly<Appearance> => state.value;
 export function setAppearance(value: Appearance) {
   if (!["dark", "light"].includes(value.mode) || !isAccentColor(value.color)
-    || (value.legacyLogo !== undefined && typeof value.legacyLogo !== "boolean")) throw new Error("Invalid appearance.");
+    || (value.legacyLogo !== undefined && typeof value.legacyLogo !== "boolean")
+    || (value.toolOutput !== undefined && !["compact", "full"].includes(value.toolOutput))) throw new Error("Invalid appearance.");
   state.value = { ...value };
   for (const listener of state.listeners) listener();
 }
@@ -42,7 +45,8 @@ export class AppearanceStore {
     if (!text) return { ...DEFAULT_APPEARANCE };
     const value = JSON.parse(text);
     return { mode: value?.mode === "light" ? "light" : "dark", color: isAccentColor(value?.color) ? value.color : "default",
-      ...(value?.legacyLogo === true ? { legacyLogo: true } : {}) };
+      ...(value?.legacyLogo === true ? { legacyLogo: true } : {}),
+      ...(["compact", "full"].includes(value?.toolOutput) ? { toolOutput: value.toolOutput as ToolOutputMode } : {}) };
   }
   write(value: Appearance) { this.files.write("appearance.json", JSON.stringify(value, null, 2) + "\n"); }
 }

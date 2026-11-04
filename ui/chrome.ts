@@ -16,6 +16,7 @@ interface HeaderInfo {
   getThinkingLevel(): string;
   getCwd?(): string;
   getAuthNotice?(): string | undefined;
+  getToolsExpanded?(): boolean;
 }
 type HeaderMeasure = { truncateToWidth: typeof truncate };
 
@@ -47,7 +48,7 @@ export function createHeader(tui: HeaderTui, { truncateToWidth }: HeaderMeasure,
   let hiddenResources: { document: TreeComponent & { children: TreeComponent[] }; component: TreeComponent; index: number } | undefined;
   const palette = createUiTheme();
   const ink = (text: string) => palette.fg("primary", text);
-  const chatStyle = createChatStyle(() => tui.requestRender?.());
+  const chatStyle = createChatStyle(() => tui.requestRender?.(), info.getToolsExpanded);
   // Install before the first document frame, not from inside header.render().
   // Pi mounts the document with its header container first and chat last.
   const document = tui.children?.find((component) => Array.isArray(component.children?.[0]?.children));

@@ -32,11 +32,11 @@ export interface SessionInterfaceApi {
 const installed = new WeakSet<object>();
 const dispose = (selector: Selector) => { selector.cancelLoads(); selector.header.setStatusMessage(null); };
 
-/** Keep the session ID so either resume alias can reopen this exact chat. */
+/** Keep one direct resume command for this exact chat. */
 export function rewriteResumeHint(text: string): string {
   const ansi = "(?:\\x1b\\[[0-?]*[ -/]*[@-~])*";
   const match = text.match(new RegExp(`^(${ansi}To resume this session:${ansi}[ \\t]+)([^\\r\\n]+) --session ([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\\r?\\n$`));
-  return match ? `${match[1]}${match[2]} --resume ${match[3]} (or ${match[2]} -r ${match[3]})\n` : text;
+  return match ? `${match[1]}${match[2]} --resume ${match[3]}\n` : text;
 }
 
 /** Style the same native selector used by pi -r/--resume and the live /resume command. */

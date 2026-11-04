@@ -1,6 +1,7 @@
 import type { Appearance } from "../lib/appearance.js";
+import type { ExtraConfigPreferences } from "../lib/config-preferences.js";
 import type { PanelFactory } from "./helpers.ts";
-import { present } from "./helpers.ts";
+import { present, assistantFixture } from "./helpers.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
@@ -10,6 +11,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 const { default: appearanceCommands } = await import(new URL("../dist/extensions/appearance.js", import.meta.url).href) as typeof import("../extensions/appearance.js");
+const { default: configCommand } = await import(new URL("../dist/extensions/config.js", import.meta.url).href) as typeof import("../extensions/config.js");
+const { CONFIG_PREFERENCES } = await import(new URL("../dist/lib/config-preferences.js", import.meta.url).href) as typeof import("../lib/config-preferences.js");
 const { AppearanceStore, DEFAULT_APPEARANCE, getAppearance, setAppearance } = await import(new URL("../dist/lib/appearance.js", import.meta.url).href) as typeof import("../lib/appearance.js");
 const { createUiTheme } = await import(new URL("../dist/ui/theme.js", import.meta.url).href) as typeof import("../ui/theme.js");
 const { mountAppearanceTerminal, nativeAppearanceTheme } = await import(new URL("../dist/ui/appearance.js", import.meta.url).href) as typeof import("../ui/appearance.js");
@@ -290,8 +293,9 @@ test("native tool, shell, and skill calls collapse, expand by click or native co
   const nativeRender = tool.render, style = createChatStyle(); t.after(() => style.dispose());
   style.apply(chat, 80);
   for (const component of [tool, shell, skill]) {
-    assert.equal(component.render(80).length, 1);
-    assert.ok(measure.stripTerminalSequences(component.render(80)[0]).startsWith("  ▸"));
+    const visible = component.render(80).map(measure.stripTerminalSequences).filter(line => line.trim());
+    assert.equal(visible.length, component === shell ? 2 : 1);
+    assert.ok(visible[0].startsWith("  ●"));
     for (const width of [8, 24, 80]) assert.ok(component.render(width).every((line: string) => measure.visibleWidth(line) <= width));
   }
   assert.ok(!tool.render(80).join("").includes("Private output"));
@@ -299,10 +303,194 @@ test("native tool, shell, and skill calls collapse, expand by click or native co
   assert.ok(tool.render(80).join("\n").includes("Private output"));
   tool.setExpanded(false); assert.equal(tool.render(80).length, 1);
   tool.updateResult({ content: [{ type: "text", text: "Access denied" }], isError: true });
-  assert.match(measure.stripTerminalSequences(tool.render(80).join("\n")), /failed.*\n.*Access denied/);
+  assert.match(measure.stripTerminalSequences(tool.render(80).join("\n")), /Read\(src\/main.ts\).*\n.*⎿ Error: Access denied/);
   shell.setExpanded(true); assert.ok(shell.render(80).join("\n").includes("Tests passed"));
   skill.setExpanded(true); assert.ok(skill.render(80).join("\n").includes("Full skill instructions"));
   style.dispose(); assert.equal(tool.render, nativeRender);
+});
+
+test("tool output preferences survive restart and theme changes, with compact as the legacy default", async t => {
+  const directory = fixture(t), store = new AppearanceStore(directory);
+  assert.equal(store.read().toolOutput, undefined);
+  store.write({ mode: "dark", color: "green", toolOutput: "full" });
+  setAppearance(store.read());
+  const handlers = new Map(), commands = new Map(), expanded: boolean[] = [];
+  appearanceCommands({ on: ((name, handler) => { handlers.set(name, handler); return () => {}; }) satisfies ExtensionAPI["on"],
+    registerCommand: ((name, command) => commands.set(name, command)) satisfies ExtensionAPI["registerCommand"] } as unknown as ExtensionAPI, store);
+  const ctx = { mode: "tui", hasUI: true, ui: { getTheme: getThemeByName, setTheme: () => ({ success: true }), notify() {},
+    setToolsExpanded: (value: boolean) => expanded.push(value) } };
+  handlers.get("session_start")({}, ctx);
+  assert.equal(expanded.at(-1), true);
+  await commands.get("theme").handler("light", ctx);
+  await commands.get("color").handler("purple", ctx);
+  assert.deepEqual(store.read(), { mode: "light", color: "purple", toolOutput: "full" });
+  setAppearance(DEFAULT_APPEARANCE); handlers.get("session_start")({}, ctx);
+  assert.equal(getAppearance().toolOutput, "full");
+  assert.throws(() => setAppearance({ ...getAppearance(), toolOutput: "invalid" as "full" }), /Invalid appearance/);
+  store.write({ mode: "dark", color: "default", toolOutput: "compact" });
+  handlers.get("session_start")({}, ctx); assert.equal(expanded.at(-1), false);
+});
+
+test("compact research groups retain their calls and surface running tools, errors and mutations separately", t => {
+  const cwd = fixture(t), ui = { requestRender() {} };
+  const make = (name: string, args: Record<string, unknown>, text = "Research details") => {
+    const tool = new ToolExecutionComponent(name, `call-${name}-${JSON.stringify(args)}`, args, { showImages: false }, undefined,
+      ui as unknown as ConstructorParameters<typeof ToolExecutionComponent>[5], cwd);
+    tool.updateResult({ content: [{ type: "text", text }], isError: false }); return tool;
+  };
+  const first = make("read", { path: "src/main.ts" }), second = make("read", { path: "src/main.ts", offset: 20 });
+  const empty = new AssistantMessageComponent(assistantFixture([{ type: "toolCall", id: "search", name: "grep", arguments: { pattern: "needle" } }]));
+  const search = make("grep", { pattern: "needle", path: "src" }), listing = make("ls", { path: "src" });
+  const running = make("read", { path: "pending.ts" }); running.updateResult({ content: [], isError: false }, true);
+  const failed = make("read", { path: "missing.ts" }); failed.updateResult({ content: [{ type: "text", text: "File is missing" }], isError: true });
+  const edit = make("edit", { path: "src/main.ts" }, "Changed a line");
+  const chat = new measure.Container(), components = [first, second, empty, search, listing, running, failed, edit];
+  for (const item of components) chat.addChild(item);
+  const originals = [...chat.children], style = createChatStyle(); t.after(() => style.dispose());
+  style.apply(chat, 80);
+  const plain = () => chat.render(80).map(measure.stripTerminalSequences).join("\n");
+  assert.match(plain(), /Explored 1 file · 1 search · 1 directory listing/);
+  assert.match(plain(), /Read\(pending.ts\)/); assert.match(plain(), /Read\(missing.ts\)\n.*Error: File is missing/);
+  assert.match(plain(), /Update\(src\/main.ts\)/); assert.ok(!plain().includes("Research details"));
+  assert.deepEqual(chat.children, originals, "grouping never replaces or removes transcript components");
+  const click = { screenX: 3, screenY: 0, shift: false, alt: false, ctrl: false, type: "click" as const, button: "left" as const, x: 3, y: 0, width: 80, height: 1 };
+  first.handleMouse(click);
+  assert.ok(!plain().includes("Research details"), "opening the group lists calls without opening all file contents");
+  assert.match(plain(), /⎿ Read\(src\/main.ts\)/); assert.match(plain(), /Search\(needle in src\)/);
+  style.apply(chat, 80); assert.match(plain(), /Search\(needle in src\)/, "an open group survives the next frame");
+  const ownHeader = first.render(80).map(measure.stripTerminalSequences).findIndex(line => line.includes("Read(src/main.ts)"));
+  first.handleMouse({ ...click, y: ownHeader }); assert.match(plain(), /Research details/);
+  for (const width of [1, 2, 8, 24, 80]) {
+    style.apply(chat, width); assert.ok(chat.render(width).every(line => measure.visibleWidth(line) <= width));
+  }
+  first.handleMouse(click); assert.ok(!plain().includes("Research details"));
+  // A result changing before the next layout must not remain hidden by its old group.
+  second.updateResult({ content: [{ type: "text", text: "New failure" }], isError: true });
+  assert.match(plain(), /New failure/);
+  style.apply(chat, 80); assert.match(plain(), /New failure/);
+  running.updateResult({ content: [{ type: "text", text: "Done" }], isError: false }); style.apply(chat, 80);
+  for (const mode of ["dark", "light"] as const) {
+    setAppearance({ ...getAppearance(), mode });
+    for (const width of [1, 2, 8, 24, 80]) {
+      style.apply(chat, width); assert.ok(chat.render(width).every(line => measure.visibleWidth(line) <= width));
+    }
+  }
+  chat.clear(); style.apply(chat, 80);
+  assert.ok(!first.render(80).join("").includes("Explored"), "removed calls release their group adapter");
+});
+
+test("full output opens existing and new calls, preserves syntax colors, and respects native expansion", t => {
+  const cwd = fixture(t), ui = { requestRender() {} };
+  const make = () => new ToolExecutionComponent("edit", "edit-call", { path: "example.ts" }, { showImages: false }, {
+    renderCall: () => new measure.Text("Edit example.ts", 0, 0),
+    renderResult: () => new measure.Text("\x1b[38;2;131;201;145m+const answer = 42;\x1b[39m\nSecond detail", 0, 0),
+  }, ui as unknown as ConstructorParameters<typeof ToolExecutionComponent>[5], cwd);
+  const tool = make(); tool.updateResult({ content: [{ type: "text", text: "Edited" }], isError: false });
+  const chat = new measure.Container(); chat.addChild(tool);
+  const style = createChatStyle(); t.after(() => style.dispose()); style.apply(chat, 80);
+  assert.ok(!tool.render(80).join("").includes("const answer"));
+  setAppearance({ ...getAppearance(), toolOutput: "full" }); style.apply(chat, 80);
+  assert.ok(tool.render(80).join("\n").includes("\x1b[38;2;131;201;145m+const answer = 42;"));
+  assert.equal(tool.render(80).map(measure.stripTerminalSequences).filter(line => line.trim() === "Edit example.ts").length, 0,
+    "the disclosure heading replaces the duplicate native call title");
+  assert.ok(tool.render(80).join("").includes("Second detail"));
+  tool.setExpanded(false); style.apply(chat, 80); assert.ok(!tool.render(80).join("").includes("const answer"));
+  tool.setExpanded(true); style.apply(chat, 80); assert.ok(tool.render(80).join("").includes("const answer"));
+  const next = make(); next.updateResult({ content: [{ type: "text", text: "Edited" }], isError: false }); chat.addChild(next); style.apply(chat, 80);
+  assert.ok(next.render(80).join("").includes("const answer"), "new calls inherit Full");
+  setAppearance({ ...getAppearance(), toolOutput: "compact" }); style.apply(chat, 80);
+  assert.ok(!tool.render(80).join("").includes("const answer")); assert.ok(!next.render(80).join("").includes("const answer"));
+});
+
+test("native global expansion controls both research grouping and newly arriving calls", t => {
+  const cwd = fixture(t), ui = { requestRender() {} }; let expanded = false;
+  setAppearance({ ...getAppearance(), toolOutput: "full" });
+  const make = (path: string) => {
+    const tool = new ToolExecutionComponent("read", path, { path }, { showImages: false }, undefined,
+      ui as unknown as ConstructorParameters<typeof ToolExecutionComponent>[5], cwd);
+    tool.setExpanded(expanded); tool.updateResult({ content: [{ type: "text", text: `Details of ${path}` }], isError: false }); return tool;
+  };
+  const chat = new measure.Container(), first = make("one.ts"), second = make("two.ts"); chat.addChild(first); chat.addChild(second);
+  const style = createChatStyle(() => {}, () => expanded); t.after(() => style.dispose());
+  style.apply(chat, 80); assert.match(measure.stripTerminalSequences(chat.render(80).join("\n")), /Explored 2 files/);
+  first.render(80);
+  first.handleMouse({ type: "click", button: "left", x: 3, y: 0, width: 80, height: 1,
+    screenX: 3, screenY: 0, shift: false, alt: false, ctrl: false });
+  assert.match(chat.render(80).map(measure.stripTerminalSequences).join("\n"), /Read\(one.ts\)/);
+  expanded = true; first.setExpanded(true); second.setExpanded(true); style.apply(chat, 80);
+  assert.ok(!chat.render(80).join("").includes("Explored")); assert.match(chat.render(80).join(""), /Details of two.ts/);
+  expanded = false; first.setExpanded(false); second.setExpanded(false);
+  const third = make("three.ts"); chat.addChild(third); style.apply(chat, 80);
+  assert.match(measure.stripTerminalSequences(chat.render(80).join("\n")), /Explored 3 files/);
+  assert.equal(second.render(80).length, 0, "Ctrl+O collapse also closes an individually opened group");
+  assert.ok(!chat.render(80).join("").includes("Details"), "a Full default must not override the user's Ctrl+O choice");
+});
+
+test("compact updates summarize confirmed native diffs and keep shell logs behind disclosure", t => {
+  const cwd = fixture(t), ui = { requestRender() {} };
+  const edit = new ToolExecutionComponent("edit", "diff-summary", { path: join(cwd, "src/main.ts") }, { showImages: false }, undefined,
+    ui as unknown as ConstructorParameters<typeof ToolExecutionComponent>[5], cwd);
+  const shell = new BashExecutionComponent("npm test", ui as unknown as ConstructorParameters<typeof BashExecutionComponent>[1]);
+  shell.appendOutput("Unnecessary setup output\nSecond setup line\n42 tests passed"); shell.setComplete(0, false);
+  const chat = new measure.Container(); chat.addChild(edit); chat.addChild(shell);
+  const style = createChatStyle(); t.after(() => style.dispose()); style.apply(chat, 80);
+  assert.ok(!edit.render(80).join("").includes("Added"), "pending changes have no success summary");
+  edit.updateResult({ content: [{ type: "text", text: "Applied edit" }], isError: false,
+    details: { diff: " 1 unchanged\n-2 const before = 1;\n+2 const after = 2;\n+3 export { after };" } });
+  const output = chat.render(80).map(measure.stripTerminalSequences).join("\n");
+  assert.match(output, /● Update\(src[\\/]main.ts\)\n.*⎿ Added 2 lines, removed 1 line/);
+  assert.match(output, /● Bash\(npm test\)\n.*⎿ 42 tests passed/);
+  assert.ok(!output.includes("setup output"));
+  shell.setExpanded(true); assert.ok(shell.render(80).join("\n").includes("Unnecessary setup output"));
+});
+
+test("clicking native result regions still works after trimming detail padding", t => {
+  const cwd = fixture(t), ui = { requestRender() {} };
+  const tool = new ToolExecutionComponent("read", "native-result", { path: "example.ts" }, { showImages: false }, undefined,
+    ui as unknown as ConstructorParameters<typeof ToolExecutionComponent>[5], cwd);
+  tool.updateResult({ content: [{ type: "text", text: "Clickable result" }], isError: false }); tool.setExpanded(true);
+  const style = createChatStyle(); t.after(() => style.dispose()); style.apply({ children: [tool] }, 80);
+  const lines = tool.render(80), y = lines.findIndex(line => measure.stripTerminalSequences(line).includes("Clickable result"));
+  assert.ok(y > 0);
+  assert.equal(tool.handleMouse({ type: "click", button: "left", x: 7, y, width: 80, height: lines.length,
+    screenX: 7, screenY: y, shift: false, alt: false, ctrl: false })?.handled, true);
+  assert.ok(!tool.render(80).join("").includes("Clickable result"));
+});
+
+test("config saves tool output in the isolated profile and preserves the old view when saving fails", async t => {
+  const directory = fixture(t), store = new AppearanceStore(directory), commands = new Map();
+  const previousProfile = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = directory;
+  t.after(() => { if (previousProfile === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousProfile; });
+  const pi = { registerCommand: ((name, command) => commands.set(name, command)) satisfies ExtensionAPI["registerCommand"],
+    getThinkingLevel: () => "medium", getActiveTools: () => [] };
+  configCommand(pi as unknown as ExtensionAPI);
+  let extra: ExtraConfigPreferences | undefined, expanded = false;
+  const notices: string[] = [];
+  const ctx = { mode: "tui", cwd: directory, isProjectTrusted: () => false, sessionManager: { getSessionFile: () => undefined },
+    ui: { theme: { name: "dark" }, notify: (message: string) => notices.push(message), setToolsExpanded: (value: boolean) => { expanded = value; },
+      [CONFIG_PREFERENCES]: (value: ExtraConfigPreferences) => {
+        extra = value;
+        return { render: () => [], handleInput() {}, cancelled: false, hasPendingChange: false, applyPendingChange() {}, dispose() {} };
+      },
+      async custom(create: PanelFactory) {
+        const tui = { mode: "fullscreen", children: [], terminal: { rows: 30, columns: 100 }, requestRender() {} };
+        const panel = create(tui, createUiTheme(), {}, () => {});
+        try {
+          await panel.ready; panel.handleInput("\t");
+          assert.deepEqual(extra?.items.find(item => item.id === "tool-output")?.values, ["compact", "full"]);
+          assert.equal(extra?.onChange("tool-output", "full"), "full");
+          assert.equal(expanded, true); assert.equal(store.read().toolOutput, "full");
+          const failure = t.mock.method(AppearanceStore.prototype, "write", () => { throw Error("Fixture profile is read-only"); });
+          assert.equal(extra?.onChange("tool-output", "compact"), "full");
+          assert.equal(expanded, true); assert.equal(getAppearance().toolOutput, "full"); assert.equal(store.read().toolOutput, "full");
+          assert.match(notices.at(-1) ?? "", /read-only/); failure.mock.restore();
+          assert.equal(extra?.onChange("legacy-logo", "on"), "on"); assert.equal(store.read().toolOutput, "full");
+        } finally { panel.dispose(); }
+        return false;
+      },
+    },
+  };
+  await commands.get("config").handler("", ctx);
 });
 
 test("a replacement session keeps the selected appearance instead of Pi's settings theme", (t) => {

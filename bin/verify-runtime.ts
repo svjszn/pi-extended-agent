@@ -12,11 +12,12 @@ import { captureFlashes } from "./flash-interface.js";
 import { visibleFlash } from "../lib/flash-status.js";
 import { createUiTheme } from "../ui/theme.js";
 import { createChatStyle } from "../ui/chat.js";
+import { getAppearance, setAppearance } from "../lib/appearance.js";
 import type { nativeAppearanceTheme as NativeAppearanceTheme } from "../ui/appearance.js";
 import type { Runtime } from "./runtime.js";
 import type { Palette, HeaderTui, PanelTui } from "../ui/types.js";
 import type { Component, TUI, EditorTheme } from "@earendil-works/pi-tui";
-import type { ExtensionAPI, ExtensionFactory, ExtensionCommandContext, KeybindingsManager as Keys } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionFactory, ExtensionCommandContext, ExtensionUIContext, KeybindingsManager as Keys } from "@earendil-works/pi-coding-agent";
 import type { readContextReport as ReadContextReport, readContextSummary as ReadContextSummary } from "../lib/context.js";
 import type { readStatus as ReadStatus } from "../lib/status.js";
 import { installCommandPolicy, prepareRuntimeCommands, verifyCommandPolicy } from "./command-policy.js";
@@ -88,7 +89,7 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
     sessionPanel.handleInput("\x1b");
   } finally { sessionPanel.dispose(); }
   const { UserMessageComponent } = await import(new URL("./modes/interactive/components/user-message.js", entry).href) as { UserMessageComponent: new (text: string) => Component };
-  const { AssistantMessageComponent } = await import(new URL("./modes/interactive/components/assistant-message.js", entry).href) as { AssistantMessageComponent: new (message: { content: { type: "text"; text: string }[] }) => Component };
+  const { AssistantMessageComponent } = await import(new URL("./modes/interactive/components/assistant-message.js", entry).href) as { AssistantMessageComponent: new (message: { content: ({ type: "text"; text: string } | { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> })[] }) => Component };
   const { initTheme, getEditorTheme } = await import(new URL("./modes/interactive/theme/theme.js", entry).href) as {
     initTheme(name: string, watch: boolean): void; getEditorTheme(): EditorTheme;
   };
@@ -120,17 +121,49 @@ export async function verifyRuntime(runtime: Runtime, packageRoot: string) {
   tool.updateResult({ content: [{ type: "text", text: "Runtime tool details" }], isError: false });
   const toolStyle = createChatStyle();
   const toolPrompt = new UserMessageComponent("Inspect the runtime");
+  const previousAppearance = getAppearance();
   try {
+    setAppearance({ ...previousAppearance, toolOutput: "compact" });
     toolStyle.apply({ children: [toolPrompt, tool] }, 80);
     const promptLines = toolPrompt.render(80);
     assert.equal(stripTerminalSequences(promptLines.at(-1)!), "", "Runtime breaks the gap after user messages");
     assert.ok(!promptLines.at(-1)!.includes("\x1b[48;"), "Runtime colors the message separator");
     assert.equal(tool.render(80).length, 1, "Runtime breaks compact tool calls");
-    assert.ok(stripTerminalSequences(tool.render(80)[0]).startsWith("  ▸ read"), "Runtime breaks tool call inset");
+    assert.ok(stripTerminalSequences(tool.render(80)[0]).startsWith("  ● Read("), "Runtime breaks tool call inset");
     tool.handleMouse({ type: "click", button: "left", x: 3, y: 0, width: 80, height: 1,
       screenX: 3, screenY: 0, shift: false, alt: false, ctrl: false });
     assert.ok(tool.render(80).join("\n").includes("Runtime tool details"), "Runtime breaks tool disclosure");
-  } finally { toolStyle.dispose(); }
+    tool.setExpanded(false);
+    const second = new api.ToolExecutionComponent("grep", "compat-search", { pattern: "runtime", path: "." }, { showImages: false }, undefined,
+      { requestRender() {} } as TUI, packageRoot);
+    second.updateResult({ content: [{ type: "text", text: "Runtime search details" }], isError: false });
+    const toolOnlyMessage = new AssistantMessageComponent({ content: [{ type: "toolCall", id: "compat-search", name: "grep", arguments: { pattern: "runtime" } }] });
+    const research = { children: [toolPrompt, tool, toolOnlyMessage, second] };
+    toolStyle.apply(research, 80);
+    assert.ok(stripTerminalSequences(tool.render(80)[0]).includes("Explored 1 file · 1 search"), "Runtime breaks research groups");
+    assert.equal(second.render(80).length, 0, "Runtime fails to collapse grouped research");
+    tool.handleMouse({ type: "click", button: "left", x: 3, y: 0, width: 80, height: 1,
+      screenX: 3, screenY: 0, shift: false, alt: false, ctrl: false });
+    toolStyle.apply(research, 80);
+    tool.render(80);
+    assert.ok(stripTerminalSequences(second.render(80).join("\n")).includes("Search(runtime in .)"), "Runtime hides calls in an opened group");
+    assert.ok(!second.render(80).join("\n").includes("Runtime search details"), "Opening a group must not expand every result");
+    const expansionHost = Object.assign(Object.create(commandApi.InteractiveMode.prototype), {
+      toolOutputExpanded: false, loadedResourcesContainer: { children: [] }, chatContainer: { children: [tool, second] },
+      builtInHeader: { setExpanded() {} }, showStatus() {},
+    }) as { createExtensionUIContext(): Pick<ExtensionUIContext, "getToolsExpanded" | "setToolsExpanded"> };
+    const expansion = expansionHost.createExtensionUIContext();
+    assert.equal(typeof expansion.getToolsExpanded, "function", "Missing tool expansion reader");
+    assert.equal(typeof expansion.setToolsExpanded, "function", "Missing tool expansion control");
+    assert.equal(expansion.getToolsExpanded(), false);
+    expansion.setToolsExpanded(true);
+    assert.equal(expansion.getToolsExpanded(), true, "Runtime breaks session-wide tool expansion");
+    assert.ok(second.render(80).join("\n").includes("Runtime search details"), "Native expansion hides grouped results");
+    expansion.setToolsExpanded(false);
+    setAppearance({ ...previousAppearance, toolOutput: "full" });
+    toolStyle.apply(research, 80);
+    assert.ok(second.render(80).join("\n").includes("Runtime search details"), "Runtime breaks full tool output");
+  } finally { toolStyle.dispose(); setAppearance(previousAppearance); }
   const theme: Palette = { bold: (s) => s, fg: (_color, s) => s };
   const component = (lines: string[]) => ({ render: () => lines, invalidate() {} });
 

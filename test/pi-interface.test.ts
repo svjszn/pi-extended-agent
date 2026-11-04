@@ -281,13 +281,16 @@ test("user cards have uncolored gaps around compact tool groups without shifting
       assert.equal(stripTerminalSequences(after[0]), "");
       assert.ok(!before.at(-1)!.includes("\x1b[48;")); assert.ok(!after[0].includes("\x1b[48;"));
       assert.equal(user.children.length, 3); assert.equal(nextUser.children.length, 3);
-      assert.equal(first.render(width).length, 1); assert.equal(second.render(width).length, 1);
+      assert.equal(first.render(width).length, 1); assert.equal(second.render(width).length, 0);
       assert.ok(chat.render(width).every((line) => visibleWidth(line) <= width));
     }
     const lines = chat.render(80).map(stripTerminalSequences);
-    const firstLine = lines.findIndex((line: string|string[]) => line.includes("▸ read"));
-    assert.equal(lines[firstLine - 1], ""); assert.match(lines[firstLine + 1], /▸ read/);
+    const firstLine = lines.findIndex((line: string|string[]) => line.includes("● Explored"));
+    assert.equal(lines[firstLine - 1], ""); assert.equal(lines[firstLine + 1], "");
     first.handleMouse({screenX: 0, screenY: 0, shift: false, alt: false, ctrl: false,  type: "click", button: "left", x: 3, y: 0, width: 80, height: 1 });
+    assert.ok(!first.render(80).join("\n").includes("Tool details"));
+    first.render(80);
+    first.handleMouse({screenX: 0, screenY: 1, shift: false, alt: false, ctrl: false, type: "click", button: "left", x: 6, y: 1, width: 80, height: 2 });
     assert.ok(first.render(80).join("\n").includes("Tool details"));
     user.setOutputPad(0); style.apply(chat, 80); assert.equal(user.children.length, 3);
     chat.removeChild(first); chat.removeChild(second); style.apply(chat, 80);
@@ -308,7 +311,7 @@ test("shared transcript measurements preserve native mouse layout through tool e
   chat.addChild(user); chat.addChild(assistant); chat.addChild(tool);
   view.document.children[view.document.children.length - 1] = chat;
   const clickTool = () => {
-    const frame = view.frame(), row = frame.lines.map(stripTerminalSequences).findIndex((line: string) => /[▸▾] read/.test(line));
+    const frame = view.frame(), row = frame.lines.map(stripTerminalSequences).findIndex((line: string) => /● Read\(/.test(line));
     assert.ok(row >= 0);
     const box = getLayoutBoxesAt(frame, 3, row).find((item) => item.component === view.document);
     assert.ok(box);
@@ -320,9 +323,9 @@ test("shared transcript measurements preserve native mouse layout through tool e
     for (const width of [80, 24, 80]) {
       view.tui.terminal.columns = width;
       clickTool(); assert.equal((tool as unknown as { expanded: boolean }).expanded, true);
-      assert.ok(view.render().some((line: string|string[]) => line.includes("Visible tool details")));
+      assert.ok(view.render().map(stripTerminalSequences).map(line => line.trim()).join(" ").includes("Visible tool details"));
       clickTool(); assert.equal((tool as unknown as { expanded: boolean }).expanded, false);
-      assert.ok(!view.render().some((line: string|string[]) => line.includes("Visible tool details")));
+      assert.ok(!view.render().map(stripTerminalSequences).join(" ").includes("Visible tool details"));
       assistant.updateContent(assistantFixture([{ type: "text", text: `New response at ${width}` }]), true);
       assert.ok(view.render().some((line: string|string[]) => line.includes(`New response at ${width}`)));
       assert.ok(view.frame().lines.every((line) => visibleWidth(line) <= width));

@@ -112,12 +112,12 @@ test("/resume opens the shared overlay and delegates selection to Pi's resume ha
   await settle(); assert.equal(state.selected, "/fixture/session-8.jsonl"); assert.equal(state.closed, true);
 });
 
-test("exit hints advertise both resume aliases and preserve custom session-directory quoting", () => {
+test("exit hints show one resume command and preserve custom session-directory quoting", () => {
   const id = "01a19ad3-4da7-77e7-8133-e1e207f81fd7";
-  assert.equal(rewriteResumeHint(`To resume this session: pi --session ${id}\n`), `To resume this session: pi --resume ${id} (or pi -r ${id})\n`);
+  assert.equal(rewriteResumeHint(`To resume this session: pi --session ${id}\n`), `To resume this session: pi --resume ${id}\n`);
   assert.equal(rewriteResumeHint(`\x1b[2mTo resume this session:\x1b[22m pi --session-dir 'custom sessions' --session ${id}\n`),
-    `\x1b[2mTo resume this session:\x1b[22m pi --session-dir 'custom sessions' --resume ${id} (or pi --session-dir 'custom sessions' -r ${id})\n`);
-  assert.equal(rewriteResumeHint("To resume this session: pi --session custom.id_1\n"), "To resume this session: pi --resume custom.id_1 (or pi -r custom.id_1)\n");
+    `\x1b[2mTo resume this session:\x1b[22m pi --session-dir 'custom sessions' --resume ${id}\n`);
+  assert.equal(rewriteResumeHint("To resume this session: pi --session custom.id_1\n"), "To resume this session: pi --resume custom.id_1\n");
   for (const text of ["Ordinary output\n", `Example: pi --session ${id}\n`, "To resume this session: pi --session invalid/id\n"]) {
     assert.equal(rewriteResumeHint(text), text);
   }
@@ -151,7 +151,7 @@ test("native shutdown keeps its cleanup and signal behavior while replacing the 
         assert.deepEqual(calls, fromSignal ? ["dispose", "theme", "drain", "stop"] : ["theme", "drain", "stop", "dispose"]);
         const output = measure.stripTerminalSequences(writes.join(""));
         if (fromSignal) assert.equal(output, "");
-        else { assert.ok(output.includes(` --resume ${manager.getSessionId()}`)); assert.ok(output.includes(` -r ${manager.getSessionId()}`)); assert.doesNotMatch(output, / --session /); assert.ok(output.includes("--session-dir")); }
+        else { assert.ok(output.includes(` --resume ${manager.getSessionId()}`)); assert.doesNotMatch(output, /\(or | -r | --session /); assert.ok(output.includes("--session-dir")); }
       } finally { write.mock.restore(); }
     }
   } finally {
