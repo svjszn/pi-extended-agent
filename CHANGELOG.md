@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.5.1
+
+- Rewrite the README around screenshots of real sessions. Replace the feature list with a comparison against upstream Pi covering permissions, planning, project memory, subagents, context, updates, and diagnostics, and lead with what the agent does rather than how it relates to its author's setup. Raise the `pi` command conflict from the migration guide into the installation section so the `EEXIST` failure is known before it happens. Add npm, checks, licence, and Node badges.
+
+- Store documentation images under `docs/public/assets/`, shared by the README and the documentation site. They are excluded from the npm artifact, which continues to ship only the launcher, `dist/`, the Pi marks, and the three text files.
+
 ## 1.5.0
 
 - Shorten the README to installation, an overview, updates, and links to the guides. Review the documentation against the implemented commands; clarify work modes, skill toggles, agent versus engine updates, appearance preferences, and release preparation.

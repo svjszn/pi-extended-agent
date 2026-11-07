@@ -1,6 +1,6 @@
 {
   "name": "pi-extended-agent",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Pi Coding Agent with a custom interface and managed engine updates",
   "license": "MIT",
   "repository": {
@@ -8,9 +8,20 @@
     "url": "git+https://github.com/svjszn/pi-extended-agent.git"
   },
   "homepage": "https://github.com/svjszn/pi-extended-agent#readme",
-  "bugs": { "url": "https://github.com/svjszn/pi-extended-agent/issues" },
-  "keywords": ["pi", "coding-agent", "cli", "terminal", "ai"],
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "bugs": {
+    "url": "https://github.com/svjszn/pi-extended-agent/issues"
+  },
+  "keywords": [
+    "pi",
+    "coding-agent",
+    "cli",
+    "terminal",
+    "ai"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
